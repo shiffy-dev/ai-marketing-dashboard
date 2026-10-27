@@ -62,6 +62,14 @@ class Analysis(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class DatasetMeta(Base):
+    __tablename__ = "dataset_meta"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Evidence(Base):
     __tablename__ = "evidence"
     __table_args__ = (UniqueConstraint("platform", "video_id", name="uq_evidence_platform_video"),)

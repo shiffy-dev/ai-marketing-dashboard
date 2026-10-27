@@ -4,6 +4,7 @@ from typing import Literal
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from .analysis import (
@@ -16,9 +17,11 @@ from .analysis import (
     llm_provider,
     serialize_analysis,
 )
-from .config import MARKET, settings
+from .config import DATA_DIR, MARKET, settings
 from .db import SessionLocal, get_session, init_db
+from .instagram import get_dataset_meta, load_instagram_dataset
 from .trending import (
+    INSTAGRAM,
     YOUTUBE,
     collect_youtube_evidence,
     evidence_summary,
@@ -51,10 +54,15 @@ def llm_client():
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    with SessionLocal() as session:
+        load_instagram_dataset(session)
     yield
 
 
 app = FastAPI(title="AI Marketing Dashboard", lifespan=lifespan)
+_static_dir = DATA_DIR / "static"
+_static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_origins),
@@ -82,7 +90,7 @@ def _trending_payload(session: Session, platform: str, relevant: bool, refresh_e
             else None
         )
     last_updated = latest_capture(session, platform)
-    return {
+    payload = {
         "market": MARKET.country,
         "platform": platform,
         "relevant": relevant,
@@ -91,6 +99,9 @@ def _trending_payload(session: Session, platform: str, relevant: bool, refresh_e
         "error": refresh_error,
         "items": items,
     }
+    if platform == INSTAGRAM:
+        payload["dataset"] = get_dataset_meta(session, INSTAGRAM)
+    return payload
 
 
 @app.get("/api/health")

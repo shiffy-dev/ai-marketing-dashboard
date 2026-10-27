@@ -15,7 +15,8 @@ from .youtube import YouTubeClient, best_thumbnail, fetch_transcript, parse_dura
 log = logging.getLogger(__name__)
 
 YOUTUBE = "youtube"
-PLATFORMS = (YOUTUBE, "instagram")
+INSTAGRAM = "instagram"
+PLATFORMS = (YOUTUBE, INSTAGRAM)
 
 # YouTube allows Shorts up to 3 minutes; the API has no isShort flag, so duration is the signal.
 SHORT_MAX_SECONDS = 180
