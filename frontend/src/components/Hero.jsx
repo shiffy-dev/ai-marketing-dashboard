@@ -15,6 +15,7 @@ export default function Hero({ platform, data, isLoading, relevant, onRelevant, 
   const items = data?.items || []
   const metrics = items.map((i) => i.metrics || {})
   const youtube = platform === 'youtube'
+  const dataset = data?.dataset
 
   return (
     <section className="bg-page-soft">
@@ -25,7 +26,9 @@ export default function Hero({ platform, data, isLoading, relevant, onRelevant, 
           <p className="mt-6 max-w-lede text-lede text-muted">
             {youtube
               ? 'The ten fastest-moving videos on YouTube in the UAE, ranked by views per hour and how far they outperform their channel size, with an evidence-backed breakdown of hook, body, CTA and why each one is working.'
-              : 'Trending among tracked UAE accounts, from a curated dataset. Not a platform-wide ranking.'}
+              : dataset?.sample
+                ? 'Sample data. These are placeholder reels so the Instagram view is never empty — drop a real export at data/instagram_reels.json to replace them.'
+                : `Trending among tracked UAE accounts. Data as of ${dataset?.scraped_at ? formatDateTime(dataset.scraped_at) : '—'}. Reviewed by our team.`}
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             {youtube && (
@@ -57,6 +60,16 @@ export default function Hero({ platform, data, isLoading, relevant, onRelevant, 
               </Badge>
             )}
             {youtube && relevant && <span>· Music &amp; gaming excluded</span>}
+            {!youtube && dataset?.sample && (
+              <Badge tone="amber" title={`Loaded from ${dataset.file}`}>
+                Sample data
+              </Badge>
+            )}
+            {!youtube && dataset && !dataset.sample && (
+              <Badge tone="green" title={`${dataset.reel_count} reels from ${dataset.source}`}>
+                Reviewed dataset
+              </Badge>
+            )}
           </div>
         </div>
 

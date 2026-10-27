@@ -50,7 +50,13 @@ export default function App() {
         />
 
         <Section
-          eyebrow={platform === 'youtube' ? 'Top 10 · ranked by velocity + outlier ratio' : 'Trending among tracked UAE accounts'}
+          eyebrow={
+            platform === 'youtube'
+              ? 'Top 10 · ranked by velocity + outlier ratio'
+              : data?.dataset?.sample
+                ? 'Sample data · placeholder reels'
+                : 'Trending among tracked UAE accounts'
+          }
           title="The videos, and why they work."
         >
           {refreshError && (
