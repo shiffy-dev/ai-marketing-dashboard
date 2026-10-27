@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { generateAnalysis } from '../api.js'
 import { formatCompact, formatPercent, formatRatio, formatVelocity, timeAgo } from '../format.js'
 import { Badge, ConfidenceBadge, Eyebrow, Notice, Skeleton } from './ui.jsx'
 import { useAnalysis } from './VideoCard.jsx'
@@ -46,9 +47,25 @@ function DrawerSkeleton() {
 
 export default function AnalysisDrawer({ item, onClose }) {
   const { data, error, isLoading, mutate } = useAnalysis(item.platform, item.video_id)
+  const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState(null)
   const a = data?.analysis
+  const pending = data?.status === 'pending'
   const m = item.metrics || {}
   const ev = item.evidence
+
+  const analyzeNow = async () => {
+    setGenerating(true)
+    setGenError(null)
+    try {
+      await generateAnalysis(item.platform, item.video_id)
+      await mutate()
+    } catch (e) {
+      setGenError(e.message)
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose()
@@ -110,6 +127,7 @@ export default function AnalysisDrawer({ item, onClose }) {
           </div>
 
           {isLoading && <DrawerSkeleton />}
+          {generating && <DrawerSkeleton />}
           {error && (
             <Notice
               tone="error"
@@ -121,6 +139,24 @@ export default function AnalysisDrawer({ item, onClose }) {
               }
             >
               {error.message}
+            </Notice>
+          )}
+          {genError && (
+            <Notice tone="error" title="Analysis failed">
+              {genError}
+            </Notice>
+          )}
+          {pending && !generating && (
+            <Notice
+              title="Analysis pending"
+              action={
+                <button className="btn btn-primary" onClick={analyzeNow}>
+                  Analyze now
+                </button>
+              }
+            >
+              No stored analysis for this video yet. Analyzing on the local model can take a few
+              minutes on CPU — or run scripts/prewarm.py to analyze the whole top 10 offline.
             </Notice>
           )}
 

@@ -8,9 +8,8 @@ export default function Header({ platform, onPlatform }) {
     <header className="sticky top-0 z-30 border-b border-rule bg-white">
       <div className="mx-auto flex max-w-page flex-wrap items-center justify-between gap-4 px-5 py-4 md:px-gutter">
         <div className="flex items-center gap-4">
-          <span className="text-lede font-bold tracking-tight text-navy">
-            Trend<span className="text-brand">Brief</span>
-          </span>
+          <img src="/ecomma.png" alt="ecomma" className="h-8 w-auto" />
+          <span className="text-lede font-bold tracking-tight text-navy">AI Marketing Dashboard</span>
           <span aria-hidden className="hidden h-6 w-px bg-rule sm:block" />
           <span
             className="inline-flex items-center gap-2 rounded-full border border-cyan-soft bg-cyan-tint px-3 py-1 text-xs font-semibold text-brand"
