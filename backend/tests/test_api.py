@@ -16,6 +16,7 @@ def test_trending_fetches_filters_and_ranks(fake):
     assert scores == sorted(scores, reverse=True)
     first = body["items"][0]
     assert {"velocity", "engagement_rate", "outlier_ratio", "score"} <= first["metrics"].keys()
+    assert first["duration_seconds"] == 60 and first["format"] == "short"
 
     unfiltered = fake.client.get("/api/trending?relevant=false").json()
     assert any(i["category_id"] == "10" for i in unfiltered["items"])

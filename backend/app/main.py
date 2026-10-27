@@ -8,11 +8,12 @@ from sqlalchemy.orm import Session
 
 from .analysis import (
     AnalysisError,
+    VideoNotFoundError,
     aggregate,
     analyses_for,
-    anthropic_client,
     cached_analysis,
     get_or_create_analysis,
+    llm_provider,
     serialize_analysis,
 )
 from .config import MARKET, settings
@@ -42,7 +43,7 @@ def youtube_client() -> YouTubeClient:
 
 def llm_client():
     try:
-        return anthropic_client()
+        return llm_provider()
     except AnalysisError:
         return None
 
@@ -145,19 +146,29 @@ async def refresh(
 
 
 @app.get("/api/analysis/{platform}/{video_id}")
-async def analysis(
+def analysis_status(platform: Platform, video_id: str, session: Session = Depends(get_session)) -> dict:
+    """Read-only: returns the stored analysis or marks it pending. Never generates —
+    page loads must not trigger CPU-heavy local inference; use POST or prewarm.py."""
+    if row := cached_analysis(session, platform, video_id):
+        return serialize_analysis(row, cached=True)
+    return {"platform": platform, "video_id": video_id, "status": "pending", "analysis": None}
+
+
+@app.post("/api/analysis/{platform}/{video_id}")
+async def analysis_generate(
     platform: Platform,
     video_id: str,
     session: Session = Depends(get_session),
     client=Depends(llm_client),
+    yt_client: YouTubeClient = Depends(youtube_client),
 ) -> dict:
     if row := cached_analysis(session, platform, video_id):
         return serialize_analysis(row, cached=True)
     if client is None:
-        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY is not set")
+        raise HTTPException(status_code=503, detail="LLM is not configured (check LLM_PROVIDER)")
     try:
-        row, cached = await get_or_create_analysis(session, platform, video_id, client)
-    except LookupError as exc:
+        row, cached = await get_or_create_analysis(session, platform, video_id, client, youtube=yt_client)
+    except VideoNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"Unknown video {platform}:{video_id}") from exc
     except AnalysisError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

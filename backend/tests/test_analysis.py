@@ -1,6 +1,5 @@
 import json
 from datetime import date
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -28,25 +27,21 @@ VALID = {
 
 
 class FakeLLM:
+    """Provider test double matching the OllamaProvider.chat interface."""
+
     def __init__(self, responses):
         self.responses = list(responses)
         self.requests = []
-        self.messages = self
 
-    async def create(self, **kwargs):
-        self.requests.append(kwargs)
-        text = self.responses.pop(0)
-        return SimpleNamespace(content=[SimpleNamespace(type="text", text=text)])
+    async def chat(self, *, system, messages, format=None):
+        self.requests.append({"system": system, "messages": messages, "format": format})
+        return self.responses.pop(0)
 
 
 @pytest.fixture
 def setup(fake):
-    async def no_image(ref, http):
-        return None
-
-    with patch("app.analysis.load_image", no_image):
-        fake.client.get("/api/trending")
-        yield fake
+    fake.client.get("/api/trending")
+    yield fake
 
 
 async def _stored_evidence(session, video):
@@ -66,19 +61,30 @@ def _with_captions(video_id):
         s.commit()
 
 
+def test_analysis_pending_does_not_generate(setup):
+    llm = FakeLLM([json.dumps(VALID)])
+    _use(llm)
+    resp = setup.client.get("/api/analysis/youtube/vid13")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pending" and resp.json()["analysis"] is None
+    assert llm.requests == []
+
+
 def test_analysis_generated_cached_and_listed(setup):
     _with_captions("vid13")
     llm = FakeLLM([json.dumps(VALID)])
     _use(llm)
     with patch("app.analysis.ensure_youtube_evidence", side_effect=_stored_evidence):
-        first = setup.client.get("/api/analysis/youtube/vid13").json()
+        first = setup.client.post("/api/analysis/youtube/vid13").json()
         second = setup.client.get("/api/analysis/youtube/vid13").json()
-    assert first["cached"] is False and second["cached"] is True
+    assert first["cached"] is False and first["status"] == "ready"
+    assert second["cached"] is True
     assert len(llm.requests) == 1
     assert first["analysis"]["confidence"] == "high"
     assert first["analysis"]["why_trending"]["drivers"][0]["evidence"]
+    assert llm.requests[0]["format"]  # JSON schema passed to Ollama
 
-    prompt = llm.requests[0]["messages"][0]["content"][-1]["text"]
+    prompt = llm.requests[0]["messages"][-1]["content"]
     assert "Hello habibi" in prompt and "computed_metrics" in prompt and "uae_calendar_context" in prompt
 
     items = setup.client.get("/api/trending").json()["items"]
@@ -89,7 +95,7 @@ def test_analysis_generated_cached_and_listed(setup):
 def test_no_transcript_forces_low_confidence(setup):
     _use(FakeLLM([json.dumps(VALID)]))
     with patch("app.analysis.ensure_youtube_evidence", side_effect=_stored_evidence):
-        body = setup.client.get("/api/analysis/youtube/vid12").json()
+        body = setup.client.post("/api/analysis/youtube/vid12").json()
     assert body["analysis"]["confidence"] == "low"
     assert "No transcript" in body["analysis"]["why_trending"]["unknowns"][0]
 
@@ -98,26 +104,43 @@ def test_invalid_json_retried_once(setup):
     llm = FakeLLM(["not json", "```json\n" + json.dumps(VALID) + "\n```"])
     _use(llm)
     with patch("app.analysis.ensure_youtube_evidence", side_effect=_stored_evidence):
-        assert setup.client.get("/api/analysis/youtube/vid11").status_code == 200
+        assert setup.client.post("/api/analysis/youtube/vid11").status_code == 200
     assert len(llm.requests) == 2
 
     bad_driver = {**VALID, "why_trending": {**VALID["why_trending"], "drivers": [{"type": "x"}]}}
     _use(FakeLLM([json.dumps(bad_driver), "{}"]))
     with patch("app.analysis.ensure_youtube_evidence", side_effect=_stored_evidence):
-        resp = setup.client.get("/api/analysis/youtube/vid10")
+        resp = setup.client.post("/api/analysis/youtube/vid10")
     assert resp.status_code == 502
 
 
 def test_unknown_video_404(setup):
     _use(FakeLLM([]))
-    assert setup.client.get("/api/analysis/youtube/nope").status_code == 404
+    assert setup.client.post("/api/analysis/youtube/nope").status_code == 404
+
+
+def test_missing_video_fetched_from_youtube(setup):
+    _use(FakeLLM([json.dumps(VALID)]))
+
+    async def no_evidence(session, video):
+        return None
+
+    with patch("app.analysis.ensure_youtube_evidence", side_effect=no_evidence):
+        resp = setup.client.post("/api/analysis/youtube/vid99")
+    assert resp.status_code == 200
+
+    from app import db
+    from app.models import Video
+
+    with db.SessionLocal() as s:
+        assert s.query(Video).filter_by(video_id="vid99").one().title == "Video 99"
 
 
 def test_aggregate_counts(setup):
     _use(FakeLLM([json.dumps(VALID), json.dumps(VALID)]))
     with patch("app.analysis.ensure_youtube_evidence", side_effect=_stored_evidence):
-        setup.client.get("/api/analysis/youtube/vid13")
-        setup.client.get("/api/analysis/youtube/vid12")
+        setup.client.post("/api/analysis/youtube/vid13")
+        setup.client.post("/api/analysis/youtube/vid12")
     body = setup.client.get("/api/aggregate?platform=youtube").json()
     assert body["total"] == 10 and body["analyzed"] == 2
     assert body["hook_techniques"] == [{"label": "curiosity gap", "count": 2}]
@@ -131,25 +154,21 @@ def test_calendar_context():
     assert "Ramadan" in {e["event"] for e in calendar_context(date(2026, 3, 1))}
 
 
-def test_anthropic_api_error_surfaces_readable_message(setup):
-    import anthropic
-    import httpx
+def test_ollama_unreachable_surfaces_clear_message(setup):
+    from app.analysis import OllamaProvider
 
-    class BillingLLM:
-        def __init__(self):
-            self.messages = self
-
-        async def create(self, **kwargs):
-            request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
-            body = {
-                "type": "error",
-                "error": {"type": "invalid_request_error", "message": "Your credit balance is too low"},
-            }
-            raise anthropic.BadRequestError(
-                "Error code: 400", response=httpx.Response(400, request=request, json=body), body=body
-            )
-
-    _use(BillingLLM())
-    resp = setup.client.get("/api/analysis/youtube/vid14")
+    _use(OllamaProvider("http://127.0.0.1:9", "qwen3:8b"))  # port 9: always refused
+    resp = setup.client.post("/api/analysis/youtube/vid14")
     assert resp.status_code == 502
-    assert resp.json()["detail"] == "Anthropic API error (400): Your credit balance is too low"
+    assert "Cannot reach Ollama" in resp.json()["detail"]
+    assert "ollama serve" in resp.json()["detail"]
+
+
+def test_mock_provider_returns_valid_analysis(setup):
+    from app.analysis import MockProvider
+
+    _use(MockProvider())
+    with patch("app.analysis.ensure_youtube_evidence", side_effect=_stored_evidence):
+        resp = setup.client.post("/api/analysis/youtube/vid13")
+    assert resp.status_code == 200
+    assert resp.json()["analysis"]["why_trending"]["drivers"][0]["evidence"]

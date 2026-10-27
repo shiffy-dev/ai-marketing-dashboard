@@ -26,3 +26,4 @@ export const aggregateKey = (platform, relevant) => `/api/aggregate?platform=${p
 export const analysisKey = (platform, videoId) => `/api/analysis/${platform}/${encodeURIComponent(videoId)}`
 
 export const refreshYoutube = (relevant) => request(`/api/refresh/youtube?relevant=${relevant}`, { method: 'POST' })
+export const generateAnalysis = (platform, videoId) => request(analysisKey(platform, videoId), { method: 'POST' })

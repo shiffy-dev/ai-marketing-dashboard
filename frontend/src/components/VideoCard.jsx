@@ -37,6 +37,7 @@ export default function VideoCard({ item, onOpen }) {
             <Badge tone="cyan" title={item.followers_or_subs ? `${formatCompact(item.views)} ${plays} ÷ ${formatCompact(item.followers_or_subs)} audience` : 'Audience size hidden'}>
               {m.outlier_ratio != null ? `${formatRatio(m.outlier_ratio)} outlier` : 'Audience hidden'}
             </Badge>
+            {item.format === 'short' && <Badge title="Under 3 minutes">Short</Badge>}
             {isLoading && <Skeleton className="h-6 w-28 rounded-full" />}
             {analysis && <ConfidenceBadge level={analysis.confidence} />}
           </div>
@@ -58,6 +59,11 @@ export default function VideoCard({ item, onOpen }) {
               </div>
             )}
             {error && <p className="text-sm text-red">Analysis unavailable: {error.message}</p>}
+            {data?.status === 'pending' && (
+              <p className="text-sm text-soft" title="Run scripts/prewarm.py, or open this card and choose Analyze now">
+                Analysis pending
+              </p>
+            )}
             {analysis && (
               <>
                 <p className="mb-1 text-eyebrow uppercase text-brand">Why it&rsquo;s performing</p>

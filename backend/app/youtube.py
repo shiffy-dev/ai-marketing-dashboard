@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from datetime import datetime
 
 import httpx
@@ -23,6 +24,17 @@ def parse_ts(value: str | None) -> datetime | None:
     if not value:
         return None
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+_DURATION_RE = re.compile(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$")
+
+
+def parse_duration(value: str | None) -> int | None:
+    """ISO-8601 duration (e.g. PT4M13S) to seconds."""
+    if not value or not (m := _DURATION_RE.match(value)):
+        return None
+    days, hours, minutes, seconds = (int(g) if g else 0 for g in m.groups())
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 
 def best_thumbnail(thumbnails: dict) -> str | None:
@@ -75,6 +87,23 @@ class YouTubeClient:
                 },
             )
         return data.get("items", [])
+
+    async def video_details(self, video_ids: list[str]) -> list[dict]:
+        """Fetch snippet/statistics/contentDetails for specific video IDs."""
+        items: list[dict] = []
+        async with self._client() as client:
+            for i in range(0, len(video_ids), 50):
+                data = await self._get(
+                    client,
+                    "videos",
+                    {
+                        "part": "snippet,statistics,contentDetails",
+                        "id": ",".join(video_ids[i : i + 50]),
+                        "maxResults": 50,
+                    },
+                )
+                items += data.get("items", [])
+        return items
 
     async def channel_subscribers(self, channel_ids: list[str]) -> dict[str, int | None]:
         result: dict[str, int | None] = {}
