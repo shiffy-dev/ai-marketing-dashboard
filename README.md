@@ -13,8 +13,15 @@ scripts/   prewarm.py and other utilities
 
 Requires Python 3.10+.
 
+Create a `.env` file in the repo root:
+
 ```bash
-cp .env.example .env          # then fill in YOUTUBE_API_KEY, ANTHROPIC_API_KEY, LLM_MODEL
+YOUTUBE_API_KEY=...
+ANTHROPIC_API_KEY=...
+LLM_MODEL=claude-opus-5-5
+```
+
+```bash
 python3 -m venv .venv
 .venv/bin/pip install -r backend/requirements.txt
 ```
