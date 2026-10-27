@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-page font-sans text-base text-body antialiased;
+  }
+  h1, h2, h3 {
+    @apply text-navy;
+  }
+}
+
+@layer components {
+  .card {
+    @apply flex flex-col rounded-card border border-rule bg-white transition-shadow duration-200;
+  }
+  .btn {
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 whitespace-nowrap rounded-md border px-5 text-sm font-bold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-primary {
+    @apply border-transparent bg-brand text-white shadow-button hover:bg-brand-deep;
+  }
+  .btn-secondary {
+    @apply border-brand bg-white text-brand hover:bg-cyan-tint;
+  }
+  .skeleton {
+    @apply animate-pulse rounded-sm bg-rule-soft;
+  }
+}

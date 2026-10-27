@@ -30,6 +30,20 @@ cd backend
 
 The SQLite database is created at `data/dashboard.db` on first start.
 
+## Run the frontend
+
+Requires Node 20+.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173. Vite proxies `/api` and `/static` to the backend on port 8000 (override with `VITE_BACKEND_URL`). The trending list loads first, then each card fetches its own analysis, so cards fill in one by one. Click a card for the full Hook / Body / CTA and "Why it's performing" breakdown.
+
+Design tokens (colours, type scale, radii, shadows) live in `frontend/tailwind.config.js` and replace Tailwind's defaults, so components can only use the theme.
+
 ## Prewarm (offline mode)
 
 ```bash
@@ -66,4 +80,5 @@ This fetches UAE YouTube trending videos plus their evidence (transcripts, top c
 ```bash
 .venv/bin/python -m pytest backend/tests
 .venv/bin/ruff check backend scripts && .venv/bin/ruff format --check backend scripts
+cd frontend && npm run lint && npm run build
 ```
