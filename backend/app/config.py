@@ -58,7 +58,21 @@ class Settings:
     top_n: int = 10
     youtube_max_results: int = 50
     youtube_stale_hours: int = 24
+    # YouTube tab is Shorts-only. The API has no isShort flag, so duration is the signal.
+    shorts_min_seconds: int = 30
+    shorts_max_seconds: int = 60
+    # search.list costs 100 quota units per page (of 10,000/day).
+    shorts_search_pages: int = 2
+    shorts_search_days: int = 7
+    # UAE mostPopular chart: 50 videos/page, 1 quota unit/page. Category charts add Shorts the main chart lacks.
+    chart_pages: int = 4
+    category_chart_pages: int = 2
     top_comments: int = 20
+    apify_token: str = field(default_factory=lambda: os.getenv("APIFY_TOKEN", ""))
+    # Empty = re-run the actor used in the most recent Apify run.
+    apify_actor: str = field(default_factory=lambda: os.getenv("APIFY_ACTOR", ""))
+    apify_max_items: int = field(default_factory=lambda: int(os.getenv("APIFY_MAX_ITEMS", "30")))
+    apify_timeout_seconds: int = 240
 
 
 MARKET = MarketConfig()

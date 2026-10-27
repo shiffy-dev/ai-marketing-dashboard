@@ -11,6 +11,8 @@ export const formatRatio = (r) => {
   return `${r.toFixed(2)}×`
 }
 
+export const formatDuration = (s) => (s == null ? '—' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`)
+
 export const formatVelocity = (v) => (v == null ? '—' : `${compact.format(v)}/h`)
 
 export function formatDateTime(iso) {

@@ -62,7 +62,9 @@ Design tokens (colours, type scale, radii, shadows) live in `frontend/tailwind.c
 
 ## Instagram dataset
 
-Instagram is a static dataset — the app never scrapes Instagram live. On startup the backend loads `data/instagram_reels.json` into the DB (idempotent upsert: re-runs don't duplicate, and a new stats snapshot is only added when plays/likes/comments changed). If that file is missing it loads `data/seed_reels.json` instead — 10 clearly-labeled placeholder reels — and the UI shows a **Sample data** badge. With a real dataset the UI shows "Trending among tracked UAE accounts. Data as of <scraped_at>. Reviewed by our team."
+**Live refresh via Apify:** set `APIFY_TOKEN` in `.env` and click **Refresh from Instagram** (`POST /api/refresh/instagram`). The backend re-runs the actor and input of your most recent Apify run (or `APIFY_ACTOR`), capped at `APIFY_MAX_ITEMS` (default 30), then rewrites `data/raw_apify_reels.json` / `data/instagram_reels.json` and reloads. It never runs automatically. If the run fails, the stored reels are served with the error.
+
+Otherwise Instagram is a static dataset. On startup the backend loads `data/instagram_reels.json` into the DB (idempotent upsert: re-runs don't duplicate, and a new stats snapshot is only added when plays/likes/comments changed). If that file is missing it loads `data/seed_reels.json` instead — 10 clearly-labeled placeholder reels — and the UI shows a **Sample data** badge. With a real dataset the UI shows "Trending among tracked UAE accounts. Data as of <scraped_at>. Reviewed by our team."
 
 Thumbnails and frames are served from `data/static/` at `/static/...`.
 

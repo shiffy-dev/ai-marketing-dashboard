@@ -88,6 +88,50 @@ class YouTubeClient:
             )
         return data.get("items", [])
 
+    async def chart(self, region: str = MARKET.country, category_id: str | None = None, pages: int = 4) -> list[dict]:
+        """Full mostPopular chart (up to 200 videos), optionally for one category. 1 quota unit per page."""
+        params = {
+            "chart": "mostPopular",
+            "regionCode": region,
+            "part": "snippet,statistics,contentDetails",
+            "maxResults": 50,
+        }
+        if category_id:
+            params["videoCategoryId"] = category_id
+        items: list[dict] = []
+        async with self._client() as client:
+            for _ in range(pages):
+                data = await self._get(client, "videos", params)
+                items += data.get("items", [])
+                if not (token := data.get("nextPageToken")):
+                    break
+                params = {**params, "pageToken": token}
+        return items
+
+    async def search_short_ids(
+        self, region: str = MARKET.country, published_after: datetime | None = None, pages: int | None = None
+    ) -> list[str]:
+        """Most-viewed recent videos under 4 minutes in the region (the API's narrowest duration filter)."""
+        params = {
+            "part": "id",
+            "type": "video",
+            "videoDuration": "short",
+            "order": "viewCount",
+            "regionCode": region,
+            "maxResults": 50,
+        }
+        if published_after:
+            params["publishedAfter"] = published_after.strftime("%Y-%m-%dT%H:%M:%SZ")
+        ids: list[str] = []
+        async with self._client() as client:
+            for _ in range(pages or settings.shorts_search_pages):
+                data = await self._get(client, "search", params)
+                ids += [i["id"]["videoId"] for i in data.get("items", []) if i.get("id", {}).get("videoId")]
+                if not (token := data.get("nextPageToken")):
+                    break
+                params = {**params, "pageToken": token}
+        return list(dict.fromkeys(ids))
+
     async def video_details(self, video_ids: list[str]) -> list[dict]:
         """Fetch snippet/statistics/contentDetails for specific video IDs."""
         items: list[dict] = []

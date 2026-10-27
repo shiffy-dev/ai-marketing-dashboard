@@ -4,7 +4,9 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
@@ -180,6 +182,21 @@ def _cli_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if k not in _STRIPPED_ENV}
 
 
+def _resolve_binary(binary: str) -> str:
+    """Find the CLI executable. On Windows npm installs `claude.cmd`, which
+    CreateProcess won't find by bare name and which would route our multi-line
+    --system-prompt through cmd.exe; prefer the real claude.exe it wraps."""
+    found = shutil.which(binary)
+    if not found:
+        return binary
+    path = Path(found)
+    if path.suffix.lower() in (".cmd", ".bat"):
+        exe = path.parent / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
+        if exe.is_file():
+            return str(exe)
+    return found
+
+
 class ClaudeCLIProvider:
     """Headless Claude Code (`claude -p`) using the user's logged-in subscription.
 
@@ -203,6 +220,7 @@ class ClaudeCLIProvider:
             (f"[previous reply]\n{m['content']}" if m["role"] == "assistant" else m["content"]) for m in messages
         )
         argv = [a.replace("{system}", system) for a in self._argv()]
+        argv[0] = _resolve_binary(argv[0])
         try:
             proc = await asyncio.create_subprocess_exec(
                 *argv,

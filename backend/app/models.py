@@ -42,7 +42,7 @@ class VideoSnapshot(Base):
     views: Mapped[int] = mapped_column(Integer, default=0)
     likes: Mapped[int | None] = mapped_column(Integer)
     comments: Mapped[int | None] = mapped_column(Integer)
-    # Position in the source chart (YouTube mostPopular order / dataset order).
+    # Position in the source chart (YouTube mostPopular order / dataset order); 0 = not on the chart.
     rank: Mapped[int] = mapped_column(Integer)
 
     video: Mapped[Video] = relationship(back_populates="snapshots")

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .config import MARKET, NOISE_CATEGORY_IDS, YOUTUBE_CATEGORIES, settings
 from .metrics import compute_metrics, score_items
 from .models import Evidence, Video, VideoSnapshot, utcnow
-from .youtube import YouTubeClient, best_thumbnail, fetch_transcript, parse_duration, parse_ts
+from .youtube import YouTubeClient, YouTubeError, best_thumbnail, fetch_transcript, parse_duration, parse_ts
 
 log = logging.getLogger(__name__)
 
@@ -18,8 +18,6 @@ YOUTUBE = "youtube"
 INSTAGRAM = "instagram"
 PLATFORMS = (YOUTUBE, INSTAGRAM)
 
-# YouTube allows Shorts up to 3 minutes; the API has no isShort flag, so duration is the signal.
-SHORT_MAX_SECONDS = 180
 
 # Outcome of the most recent refresh attempt per platform (process-local).
 refresh_status: dict[str, dict] = {}
@@ -39,6 +37,30 @@ def is_stale(captured_at: datetime | None, hours: int = settings.youtube_stale_h
     return captured_at is None or utcnow() - captured_at > timedelta(hours=hours)
 
 
+def is_short(raw: dict) -> bool:
+    secs = parse_duration(raw.get("contentDetails", {}).get("duration"))
+    return secs is not None and settings.shorts_min_seconds <= secs <= settings.shorts_max_seconds
+
+
+async def _category_chart_videos(client: YouTubeClient, exclude: set[str]) -> list[dict]:
+    """UAE trending charts per category; best-effort, as not every category has a chart."""
+    results = await asyncio.gather(
+        *(client.chart(MARKET.country, cat, settings.category_chart_pages) for cat in YOUTUBE_CATEGORIES),
+        return_exceptions=True,
+    )
+    seen: dict[str, dict] = {}
+    for res in results:
+        if isinstance(res, YouTubeError):
+            log.debug("category chart skipped: %s", res)
+        elif isinstance(res, BaseException):
+            raise res
+        else:
+            for item in res:
+                if item["id"] not in exclude:
+                    seen.setdefault(item["id"], item)
+    return list(seen.values())
+
+
 def _apply_snippet(video: Video, item: dict, subs: dict[str, int | None]) -> None:
     snippet = item.get("snippet", {})
     video.title = snippet.get("title", "")
@@ -53,12 +75,15 @@ def _apply_snippet(video: Video, item: dict, subs: dict[str, int | None]) -> Non
 
 
 async def refresh_youtube(session: Session, client: YouTubeClient | None = None) -> datetime:
-    """Fetches the UAE mostPopular chart and stores videos + a snapshot. Raises on API failure."""
+    """Stores Shorts from the UAE mostPopular chart and its category charts. Raises if the main chart fails."""
     client = client or YouTubeClient()
     attempted_at = utcnow()
     session.commit()  # end any open read transaction before network awaits
     try:
-        items = await client.most_popular(MARKET.country)
+        chart = await client.chart(MARKET.country, pages=settings.chart_pages)
+        chart_rank = {item["id"]: rank for rank, item in enumerate(chart, start=1)}
+        by_category = await _category_chart_videos(client, set(chart_rank))
+        items = [i for i in [*chart, *by_category] if is_short(i)]
         subs = await client.channel_subscribers([i["snippet"]["channelId"] for i in items])
     except Exception as exc:
         refresh_status[YOUTUBE] = {"ok": False, "error": str(exc), "attempted_at": attempted_at}
@@ -71,7 +96,7 @@ async def refresh_youtube(session: Session, client: YouTubeClient | None = None)
             select(Video).where(Video.platform == YOUTUBE, Video.video_id.in_([i["id"] for i in items]))
         )
     }
-    for rank, item in enumerate(items, start=1):
+    for item in items:
         stats = item.get("statistics", {})
         video = existing.get(item["id"]) or Video(platform=YOUTUBE, video_id=item["id"])
         _apply_snippet(video, item, subs)
@@ -86,20 +111,20 @@ async def refresh_youtube(session: Session, client: YouTubeClient | None = None)
                 views=int(stats.get("viewCount", 0)),
                 likes=int(stats["likeCount"]) if "likeCount" in stats else None,
                 comments=int(stats["commentCount"]) if "commentCount" in stats else None,
-                rank=rank,
+                rank=chart_rank.get(item["id"], 0),  # 0 = found via Shorts search, not on the chart
             )
         )
     session.commit()
     refresh_status[YOUTUBE] = {"ok": True, "error": None, "attempted_at": attempted_at}
-    log.info("refreshed %d YouTube trending videos", len(items))
+    from_categories = sum(i["id"] not in chart_rank for i in items)
+    log.info("refreshed %d YouTube Shorts (%d from category charts)", len(items), from_categories)
     return captured_at
 
 
 def _video_format(video: Video, raw: dict) -> str:
     if video.platform != YOUTUBE:
         return "short"  # Instagram Reels are short-form by definition
-    secs = parse_duration(raw.get("contentDetails", {}).get("duration"))
-    return "short" if secs is not None and secs <= SHORT_MAX_SECONDS else "long"
+    return "short" if is_short(raw) else "long"
 
 
 def _serialize(video: Video, snap: VideoSnapshot, as_of: datetime) -> dict:
@@ -121,7 +146,7 @@ def _serialize(video: Video, snap: VideoSnapshot, as_of: datetime) -> dict:
         "duration": raw.get("contentDetails", {}).get("duration"),
         "duration_seconds": parse_duration(raw.get("contentDetails", {}).get("duration")),
         "format": _video_format(video, raw),
-        "chart_rank": snap.rank,
+        "chart_rank": snap.rank or None,
         "views": snap.views,
         "likes": snap.likes,
         "comments": snap.comments,
@@ -141,6 +166,8 @@ def list_trending(session: Session, platform: str, relevant: bool = True, limit:
         .join(VideoSnapshot, VideoSnapshot.video_id == Video.id)
         .where(VideoSnapshot.platform == platform, VideoSnapshot.captured_at == captured_at)
     ).all()
+    if platform == YOUTUBE:
+        rows = [(v, s) for v, s in rows if is_short(v.raw_json or {})]
     if relevant and platform == YOUTUBE:
         rows = [(v, s) for v, s in rows if v.category_id not in NOISE_CATEGORY_IDS]
     items = score_items([_serialize(v, s, captured_at) for v, s in rows])[: limit or settings.top_n]

@@ -1,5 +1,6 @@
 import json
 from datetime import date
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -193,9 +194,23 @@ def test_claude_cli_invoked_headless_without_api_key(setup, monkeypatch):
     assert resp.json()["analysis"]["hook"]["technique"] == "Curiosity Gap"
 
     argv = calls[0]["argv"]
-    assert argv[0] == "claude" and "-p" in argv and "--output-format" in argv and "json" in argv
+    assert Path(argv[0]).stem.lower() == "claude" and "-p" in argv and "--output-format" in argv and "json" in argv
     assert "ANTHROPIC_API_KEY" not in calls[0]["env"]
     assert b"Evidence (JSON)" in proc.stdin_data  # prompt went in via stdin
+
+
+def test_resolve_binary_prefers_exe_behind_npm_cmd_shim(tmp_path):
+    from app.analysis import _resolve_binary
+
+    shim = tmp_path / "claude.cmd"
+    shim.write_text("@ECHO off")
+    exe = tmp_path / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"")
+    with patch("app.analysis.shutil.which", return_value=str(shim)):
+        assert _resolve_binary("claude") == str(exe)
+    with patch("app.analysis.shutil.which", return_value=None):
+        assert _resolve_binary("claude") == "claude"
 
 
 def test_claude_cli_missing_binary_is_clear(setup):

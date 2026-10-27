@@ -42,13 +42,20 @@ def _video(i: int, category: str, views: int, hours_old: int) -> dict:
 
 
 VIDEOS = [_video(i, "10" if i < 3 else "22", 5_000_000 if i < 3 else 10_000 * (i + 1), 5 + i) for i in range(15)]
+VIDEOS[5]["contentDetails"] = {"duration": "PT61S"}  # one second over the Shorts limit
+VIDEOS[6]["contentDetails"] = {"duration": "PT29S"}  # one second under the Shorts minimum
+VIDEOS[7]["contentDetails"] = {"duration": "PT30S"}  # exactly the minimum
 # Only reachable via videos.list?id=... — never appears in the chart.
 EXTRA_VIDEO = _video(99, "22", 123_000, 3)
+# Returned by the People & Blogs category chart (alongside main-chart video vid0, which must be de-duplicated).
+SEARCH_SHORT = _video(50, "22", 900_000, 4)
+SEARCH_LONG = {**_video(51, "22", 2_000_000, 4), "contentDetails": {"duration": "PT3M"}}
 
 
 class FakeYouTube:
     def __init__(self):
         self.fail = False
+        self.category_fail = False
         self.calls = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -61,10 +68,16 @@ class FakeYouTube:
         if path == "videos":
             if "id" in request.url.params:
                 ids = set(request.url.params["id"].split(","))
-                items = [v for v in [*VIDEOS, EXTRA_VIDEO] if v["id"] in ids]
+                items = [v for v in [*VIDEOS, EXTRA_VIDEO, SEARCH_SHORT, SEARCH_LONG] if v["id"] in ids]
                 return httpx.Response(200, json={"items": items})
-            assert request.url.params["regionCode"] == "AE"
-            return httpx.Response(200, json={"items": VIDEOS})
+            assert request.url.params["regionCode"] == "AE" and request.url.params["chart"] == "mostPopular"
+            category = request.url.params.get("videoCategoryId")
+            if category is None:
+                return httpx.Response(200, json={"items": VIDEOS})
+            if self.category_fail or category != "22":
+                error = {"message": "chart not found", "errors": [{"reason": "videoChartNotFound"}]}
+                return httpx.Response(404, json={"error": error})
+            return httpx.Response(200, json={"items": [VIDEOS[0], SEARCH_SHORT, SEARCH_LONG]})
         if path == "channels":
             ids = request.url.params["id"].split(",")
             items = [

@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Literal
 
+import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +18,7 @@ from .analysis import (
     llm_provider,
     serialize_analysis,
 )
+from .apify import ApifyError, refresh_instagram
 from .config import DATA_DIR, MARKET, settings
 from .db import SessionLocal, get_session, init_db
 from .instagram import get_dataset_meta, load_instagram_dataset
@@ -153,6 +155,22 @@ async def refresh(
         background.add_task(_collect_evidence_background, [i["video_id"] for i in payload["items"]], client)
     elif not payload["items"]:
         raise HTTPException(status_code=502, detail=f"YouTube refresh failed and no stored data: {refresh_error}")
+    return payload
+
+
+@app.post("/api/refresh/instagram")
+async def refresh_instagram_endpoint(relevant: bool = Query(True), session: Session = Depends(get_session)) -> dict:
+    """Re-runs the Apify Instagram actor; on failure serves the stored reels with the error."""
+    refresh_error = None
+    try:
+        await refresh_instagram(session)
+    except (ApifyError, httpx.HTTPError, OSError) as exc:
+        log.warning("Instagram refresh failed, serving stored data: %s", exc)
+        session.rollback()
+        refresh_error = str(exc) or type(exc).__name__
+    payload = _trending_payload(session, INSTAGRAM, relevant, refresh_error)
+    if refresh_error and not payload["items"]:
+        raise HTTPException(status_code=502, detail=f"Instagram refresh failed: {refresh_error}")
     return payload
 
 
