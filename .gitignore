@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# App data
+data/*.db
+data/*.db-shm
+data/*.db-wal
+node_modules/
