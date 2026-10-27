@@ -129,3 +129,27 @@ def test_calendar_context():
     assert "ongoing" in events["White Friday sales"]
     assert "starts in 7 days" == events["UAE National Day (Eid Al Etihad)"]
     assert "Ramadan" in {e["event"] for e in calendar_context(date(2026, 3, 1))}
+
+
+def test_anthropic_api_error_surfaces_readable_message(setup):
+    import anthropic
+    import httpx
+
+    class BillingLLM:
+        def __init__(self):
+            self.messages = self
+
+        async def create(self, **kwargs):
+            request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+            body = {
+                "type": "error",
+                "error": {"type": "invalid_request_error", "message": "Your credit balance is too low"},
+            }
+            raise anthropic.BadRequestError(
+                "Error code: 400", response=httpx.Response(400, request=request, json=body), body=body
+            )
+
+    _use(BillingLLM())
+    resp = setup.client.get("/api/analysis/youtube/vid14")
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == "Anthropic API error (400): Your credit balance is too low"

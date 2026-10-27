@@ -139,20 +139,36 @@ def evidence_is_fresh(evidence: Evidence | None) -> bool:
     return not is_stale(as_utc(evidence.fetched_at))
 
 
+_evidence_locks: dict[str, asyncio.Lock] = {}
+
+
 async def ensure_youtube_evidence(
     session: Session, video: Video, client: YouTubeClient | None = None, force: bool = False
 ) -> Evidence:
     """Transcript (en/ar captions, else title+description) and top comments for one video."""
-    evidence = session.scalar(select(Evidence).where(Evidence.platform == YOUTUBE, Evidence.video_id == video.video_id))
-    if not force and evidence_is_fresh(evidence):
-        return evidence
-    session.commit()  # end the read transaction before network awaits
+    # The background collector and analysis requests can race for the same video.
+    async with _evidence_locks.setdefault(video.video_id, asyncio.Lock()):
+        evidence = session.scalar(
+            select(Evidence).where(Evidence.platform == YOUTUBE, Evidence.video_id == video.video_id)
+        )
+        if evidence is not None:
+            session.refresh(evidence)
+        if not force and evidence_is_fresh(evidence):
+            return evidence
+        session.commit()  # end the read transaction before network awaits
+        return await _fetch_and_store_evidence(session, video, evidence, client or YouTubeClient())
 
-    client = client or YouTubeClient()
+
+async def _fetch_and_store_evidence(
+    session: Session, video: Video, evidence: Evidence | None, client: YouTubeClient
+) -> Evidence:
     transcript, (comments, comments_status) = await asyncio.gather(
         fetch_transcript(video.video_id), client.top_comments(video.video_id)
     )
-    evidence = evidence or Evidence(platform=YOUTUBE, video_id=video.video_id)
+    if evidence is None:  # another process (e.g. prewarm) may have inserted it meanwhile
+        evidence = session.scalar(
+            select(Evidence).where(Evidence.platform == YOUTUBE, Evidence.video_id == video.video_id)
+        ) or Evidence(platform=YOUTUBE, video_id=video.video_id)
     if transcript:
         evidence.transcript, evidence.transcript_language = transcript
         evidence.transcript_source = "captions"
