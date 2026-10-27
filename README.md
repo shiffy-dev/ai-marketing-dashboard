@@ -11,21 +11,24 @@ scripts/   prewarm.py and other utilities
 
 ## Setup
 
-Requires Python 3.10+, Node 20+, and [Ollama](https://ollama.com) for local LLM analysis (no paid APIs).
+Requires Python 3.10+, Node 20+, and [Claude Code](https://docs.claude.com/en/docs/claude-code) logged in with a Claude subscription. Analyses run through the CLI in headless mode (`claude -p`) — no API key, no per-token billing.
 
 ```bash
-ollama pull qwen3:8b        # one-time model download (~5 GB)
-ollama serve                # starts the local model server on http://localhost:11434
+npm install -g @anthropic-ai/claude-code
+claude                      # first run: sign in with your Claude (Pro/Max) account, then /exit
+claude -p "say ok"          # sanity check — should print "ok"
 ```
 
 Create a `.env` file in the repo root:
 
 ```bash
 YOUTUBE_API_KEY=...
-LLM_PROVIDER=ollama                    # or "mock" for offline UI development
-LLM_MODEL=qwen3:8b
-OLLAMA_BASE_URL=http://localhost:11434
+LLM_PROVIDER=claude_cli     # or "mock" for UI development / tests
+# LLM_MODEL=sonnet          # optional: override the CLI's default model
+# CLAUDE_CLI_BIN=claude     # optional: path to the claude binary
 ```
+
+`ANTHROPIC_API_KEY` must **not** be set — the backend strips it from the CLI's environment anyway, so the subscription is always used.
 
 ```bash
 python3 -m venv .venv
@@ -74,7 +77,7 @@ This fetches UAE YouTube trending videos plus their evidence (transcripts, top c
 | GET | `/api/trending?platform=youtube&relevant=true` | Top 10 with metrics, served from the DB. YouTube data older than 24h is refetched first. |
 | POST | `/api/refresh/youtube` | Refetch YouTube trending. On failure, returns the last stored data with `cached: true`. |
 | GET | `/api/analysis/{platform}/{video_id}` | Stored analysis, or `{"status": "pending"}`. Read-only — never generates. |
-| POST | `/api/analysis/{platform}/{video_id}` | Generate the analysis now (local Ollama model from `LLM_MODEL`) and cache it. |
+| POST | `/api/analysis/{platform}/{video_id}` | Generate the analysis now via the Claude Code CLI and cache it. |
 | GET | `/api/aggregate?platform=youtube` | Counts of hook techniques and format tags across the analyzed top 10. |
 | GET | `/api/health` | Health check |
 
@@ -82,7 +85,9 @@ This fetches UAE YouTube trending videos plus their evidence (transcripts, top c
 
 ### LLM analysis
 
-`backend/app/analysis.py` sends a local Ollama model (`LLM_PROVIDER=ollama`, model from `LLM_MODEL`, default `qwen3:8b`) the stats, computed metrics, title/description, transcript (first 3,000 chars), top 10 comments, today's date, the UAE calendar (`backend/app/uae_calendar.py`: Ramadan, Eids, National Day, Dubai Shopping Festival, White Friday) and `data/uae_trends.json` if that file exists. It is text-only — no images are sent, tuned for CPU-only machines. The request uses Ollama's `/api/chat` with `format` set to the Pydantic JSON schema and `think: false`; output is validated by `AnalysisResult` (`backend/app/schemas.py`) and retried once on failure. Analyses run strictly one at a time with a 10-minute timeout. Results are cached in the `analyses` table by `platform:video_id` + `PROMPT_VERSION`; bump `PROMPT_VERSION` to invalidate. If a video has no real transcript, its overall confidence is forced to `low`.
+`backend/app/analysis.py` runs `claude -p --output-format json` as a subprocess (`ClaudeCLIProvider`), passing the prompt on stdin. The evidence is text-only: stats, computed metrics, title/description, transcript (first 3,000 chars), top 10 comments, today's date, the UAE calendar (`backend/app/uae_calendar.py`: Ramadan, Eids, National Day, Dubai Shopping Festival, White Friday) and `data/uae_trends.json` if that file exists. The reply is validated by `AnalysisResult` (`backend/app/schemas.py`) and retried once on failure. Analyses run strictly one at a time with a 5-minute timeout. If `claude` is missing or not logged in, the error says so. Results are cached in the `analyses` table by `platform:video_id` + `PROMPT_VERSION`; bump `PROMPT_VERSION` to invalidate. If a video has no real transcript, its overall confidence is forced to `low`.
+
+Only `POST /api/analysis/...` and `scripts/prewarm.py` ever invoke the CLI. Page loads are read-only and show "Analysis pending" until an analysis is stored.
 
 ### Metrics
 

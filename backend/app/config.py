@@ -45,10 +45,12 @@ YOUTUBE_CATEGORIES: dict[str, str] = {
 @dataclass(frozen=True)
 class Settings:
     youtube_api_key: str = field(default_factory=lambda: os.getenv("YOUTUBE_API_KEY", ""))
-    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "ollama"))
-    llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL") or "qwen3:8b")
-    ollama_base_url: str = field(default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
-    llm_timeout_seconds: int = 600  # CPU-only inference can take minutes
+    # "claude_cli" (default): headless Claude Code using the logged-in subscription. "mock": tests/UI dev.
+    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "claude_cli"))
+    # Optional model override for `claude --model`; empty = CLI default.
+    llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", ""))
+    claude_cli_bin: str = field(default_factory=lambda: os.getenv("CLAUDE_CLI_BIN", "claude"))
+    llm_timeout_seconds: int = 300
     database_url: str = field(
         default_factory=lambda: os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'dashboard.db'}")
     )

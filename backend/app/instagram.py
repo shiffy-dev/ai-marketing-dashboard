@@ -70,12 +70,16 @@ def load_instagram_dataset(session: Session, path: Path | None = None) -> dict |
         "reel_count": len(reels),
     }
 
-    existing = {
-        v.video_id: v
-        for v in session.scalars(
-            select(Video).where(Video.platform == INSTAGRAM, Video.video_id.in_([r["id"] for r in reels]))
-        )
-    } if reels else {}
+    existing = (
+        {
+            v.video_id: v
+            for v in session.scalars(
+                select(Video).where(Video.platform == INSTAGRAM, Video.video_id.in_([r["id"] for r in reels]))
+            )
+        }
+        if reels
+        else {}
+    )
 
     for rank, reel in enumerate(reels, start=1):
         video = existing.get(reel["id"]) or Video(platform=INSTAGRAM, video_id=reel["id"])
