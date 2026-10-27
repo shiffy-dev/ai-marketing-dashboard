@@ -197,3 +197,16 @@ def evidence_summary(session: Session, platform: str, video_ids: list[str]) -> d
         }
         for e in rows
     }
+
+
+def video_item(session: Session, platform: str, video_id: str) -> tuple[Video, dict] | None:
+    """The video with stats/metrics from its most recent snapshot."""
+    video = session.scalar(select(Video).where(Video.platform == platform, Video.video_id == video_id))
+    if video is None:
+        return None
+    snap = session.scalar(
+        select(VideoSnapshot).where(VideoSnapshot.video_id == video.id).order_by(VideoSnapshot.captured_at.desc())
+    )
+    if snap is None:
+        return None
+    return video, _serialize(video, snap, as_utc(snap.captured_at))

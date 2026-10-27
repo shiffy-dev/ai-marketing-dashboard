@@ -36,7 +36,7 @@ The SQLite database is created at `data/dashboard.db` on first start.
 .venv/bin/python scripts/prewarm.py
 ```
 
-This fetches UAE YouTube trending videos plus their evidence (transcripts, top comments, channel sizes) and stores everything in the DB. After it runs, the dashboard serves stored data even if the APIs are unreachable.
+This fetches UAE YouTube trending videos plus their evidence (transcripts, top comments, channel sizes), runs the LLM analysis for every top-10 video, and stores everything in the DB. After it runs, the dashboard serves stored data even if the APIs are unreachable.
 
 ## API
 
@@ -44,9 +44,15 @@ This fetches UAE YouTube trending videos plus their evidence (transcripts, top c
 | --- | --- | --- |
 | GET | `/api/trending?platform=youtube&relevant=true` | Top 10 with metrics, served from the DB. YouTube data older than 24h is refetched first. |
 | POST | `/api/refresh/youtube` | Refetch YouTube trending. On failure, returns the last stored data with `cached: true`. |
+| GET | `/api/analysis/{platform}/{video_id}` | Cached LLM analysis, or generate it (Claude, model from `LLM_MODEL`) and cache it. |
+| GET | `/api/aggregate?platform=youtube` | Counts of hook techniques and format tags across the analyzed top 10. |
 | GET | `/api/health` | Health check |
 
 `relevant=true` (the default) hides Music and Gaming videos (`NOISE_CATEGORY_IDS` in `backend/app/config.py`) before taking the top 10.
+
+### LLM analysis
+
+`backend/app/analysis.py` sends Claude the stats, computed metrics, title/description, transcript, top comments, thumbnail (as an image), today's date, the UAE calendar (`backend/app/uae_calendar.py`: Ramadan, Eids, National Day, Dubai Shopping Festival, White Friday) and `data/uae_trends.json` if that file exists. The output is strict JSON validated by `AnalysisResult` (`backend/app/schemas.py`). If validation fails, the request is retried once. At most 5 requests run concurrently. Results are cached in the `analyses` table by `platform:video_id` + `PROMPT_VERSION`; bump `PROMPT_VERSION` to invalidate. If a video has no real transcript, its overall confidence is forced to `low`.
 
 ### Metrics
 

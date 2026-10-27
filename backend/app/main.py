@@ -6,6 +6,15 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
+from .analysis import (
+    AnalysisError,
+    aggregate,
+    analyses_for,
+    anthropic_client,
+    cached_analysis,
+    get_or_create_analysis,
+    serialize_analysis,
+)
 from .config import MARKET, settings
 from .db import SessionLocal, get_session, init_db
 from .trending import (
@@ -31,6 +40,13 @@ def youtube_client() -> YouTubeClient:
     return YouTubeClient()
 
 
+def llm_client():
+    try:
+        return anthropic_client()
+    except AnalysisError:
+        return None
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
@@ -53,9 +69,17 @@ async def _collect_evidence_background(video_ids: list[str], client: YouTubeClie
 
 def _trending_payload(session: Session, platform: str, relevant: bool, refresh_error: str | None) -> dict:
     items = list_trending(session, platform, relevant)
-    evidence = evidence_summary(session, platform, [i["video_id"] for i in items])
+    ids = [i["video_id"] for i in items]
+    evidence = evidence_summary(session, platform, ids)
+    analyses = analyses_for(session, platform, ids)
     for item in items:
         item["evidence"] = evidence.get(item["video_id"])
+        row = analyses.get(item["video_id"])
+        item["analysis"] = (
+            {"confidence": row.confidence, "hook_technique": row.result_json.get("hook", {}).get("technique")}
+            if row
+            else None
+        )
     last_updated = latest_capture(session, platform)
     return {
         "market": MARKET.country,
@@ -118,3 +142,34 @@ async def refresh(
     elif not payload["items"]:
         raise HTTPException(status_code=502, detail=f"YouTube refresh failed and no stored data: {refresh_error}")
     return payload
+
+
+@app.get("/api/analysis/{platform}/{video_id}")
+async def analysis(
+    platform: Platform,
+    video_id: str,
+    session: Session = Depends(get_session),
+    client=Depends(llm_client),
+) -> dict:
+    if row := cached_analysis(session, platform, video_id):
+        return serialize_analysis(row, cached=True)
+    if client is None:
+        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY is not set")
+    try:
+        row, cached = await get_or_create_analysis(session, platform, video_id, client)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown video {platform}:{video_id}") from exc
+    except AnalysisError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return serialize_analysis(row, cached=cached)
+
+
+@app.get("/api/aggregate")
+def aggregate_endpoint(
+    platform: Platform = Query(YOUTUBE),
+    relevant: bool = Query(True),
+    session: Session = Depends(get_session),
+) -> dict:
+    ids = [i["video_id"] for i in list_trending(session, platform, relevant)]
+    rows = list(analyses_for(session, platform, ids).values())
+    return {"platform": platform, "relevant": relevant, "total": len(ids), "analyzed": len(rows), **aggregate(rows)}
