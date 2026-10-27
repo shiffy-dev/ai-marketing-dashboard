@@ -1,15 +1,12 @@
-"""Evidence-based "why is this trending" analysis with Claude."""
+"""Evidence-based "why is this trending" analysis via a local Ollama model."""
 
 import asyncio
-import base64
 import json
 import logging
-import mimetypes
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import httpx
-from anthropic import APIConnectionError, APIStatusError, AsyncAnthropic
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,10 +20,10 @@ from .youtube import YouTubeClient
 
 log = logging.getLogger(__name__)
 
-PROMPT_VERSION = "v1"
-MAX_TRANSCRIPT_CHARS = 8_000
-MAX_DESCRIPTION_CHARS = 2_000
-MAX_IMAGES = 6
+PROMPT_VERSION = "v2"
+MAX_TRANSCRIPT_CHARS = 3_000
+MAX_DESCRIPTION_CHARS = 1_000
+MAX_COMMENTS = 10
 REAL_TRANSCRIPT_SOURCES = {"captions", "dataset"}
 
 HOOK_TECHNIQUES = [
@@ -125,18 +122,94 @@ class VideoNotFoundError(Exception):
     """The video is unknown to us and could not be fetched from its platform API."""
 
 
-_semaphore = asyncio.Semaphore(5)
+# CPU-only box: run analyses strictly one at a time.
+_semaphore = asyncio.Semaphore(1)
 _locks: dict[str, asyncio.Lock] = {}
-_client: AsyncAnthropic | None = None
+
+MOCK_ANALYSIS = {
+    "language": "English with Gulf Arabic phrases",
+    "hook": {"text": "POV: your parcel arrives the same day in Dubai", "technique": "direct address"},
+    "body": {
+        "structure": "relatable problem -> product demo -> price reveal",
+        "key_beats": ["pain point in the first 2 seconds", "quick demo sequence", "price/reveal at the end"],
+    },
+    "cta": {"text": "Link in bio", "type": "link/shop"},
+    "why_trending": {
+        "summary": "Mock analysis: a direct-address hook plus an outlier view-to-follower ratio suggests "
+        "distribution well beyond the account's own audience.",
+        "drivers": [
+            {
+                "type": "content",
+                "claim": "Direct-address hook in the first seconds retains viewers",
+                "evidence": "hook text: 'POV: your parcel arrives the same day in Dubai'",
+                "confidence": "medium",
+            },
+            {
+                "type": "distribution",
+                "claim": "Views far exceed the channel's follower base",
+                "evidence": "outlier_ratio is high relative to the account's audience size",
+                "confidence": "medium",
+            },
+            {
+                "type": "context",
+                "claim": "UAE-relevant content rides local purchase intent",
+                "evidence": "market AE; video appeared in today's UAE trending chart",
+                "confidence": "low",
+            },
+        ],
+        "unknowns": ["paid promotion", "traffic sources", "audience demographics"],
+        "takeaways": [
+            "Lead with the customer problem in the first 2 seconds",
+            "Test direct-address POV hooks for UAE product videos",
+        ],
+    },
+    "format_tags": ["UGC style", "short-form"],
+    "confidence": "medium",
+}
 
 
-def anthropic_client() -> AsyncAnthropic:
-    global _client
-    if not settings.anthropic_api_key:
-        raise AnalysisError("ANTHROPIC_API_KEY is not set")
-    if _client is None:
-        _client = AsyncAnthropic(api_key=settings.anthropic_api_key)
-    return _client
+class OllamaProvider:
+    """Local inference via Ollama's /api/chat with structured (JSON schema) output."""
+
+    def __init__(self, base_url: str, model: str):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+
+    async def chat(self, *, system: str, messages: list[dict], format: dict | None = None) -> str:
+        payload: dict = {
+            "model": self.model,
+            "stream": False,
+            "think": False,  # qwen3 thinking mode off: too slow on CPU
+            "messages": [{"role": "system", "content": system}, *messages],
+        }
+        if format is not None:
+            payload["format"] = format
+        try:
+            async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as http:
+                resp = await http.post(f"{self.base_url}/api/chat", json=payload)
+        except httpx.HTTPError as exc:
+            raise AnalysisError(
+                f"Cannot reach Ollama at {self.base_url}. Start it with `ollama serve` "
+                f"(and run `ollama pull {self.model}` once), then retry."
+            ) from exc
+        if resp.status_code != 200:
+            raise AnalysisError(f"Ollama error ({resp.status_code}): {resp.text[:300]}")
+        return resp.json().get("message", {}).get("content") or ""
+
+
+class MockProvider:
+    """Deterministic offline analysis for UI development (LLM_PROVIDER=mock)."""
+
+    async def chat(self, *, system: str, messages: list[dict], format: dict | None = None) -> str:
+        return json.dumps(MOCK_ANALYSIS)
+
+
+def llm_provider() -> OllamaProvider | MockProvider:
+    if settings.llm_provider == "mock":
+        return MockProvider()
+    if settings.llm_provider == "ollama":
+        return OllamaProvider(settings.ollama_base_url, settings.llm_model)
+    raise AnalysisError(f"unknown LLM_PROVIDER {settings.llm_provider!r} (expected 'ollama' or 'mock')")
 
 
 def load_uae_trends() -> dict | list | None:
@@ -148,29 +221,6 @@ def load_uae_trends() -> dict | list | None:
     except (OSError, ValueError) as exc:
         log.warning("ignoring unreadable %s: %s", path, exc)
         return None
-
-
-async def load_image(ref: str, http: httpx.AsyncClient) -> dict | None:
-    """Anthropic image block from a URL or a path relative to data/."""
-    try:
-        if ref.startswith(("http://", "https://")):
-            resp = await http.get(ref)
-            resp.raise_for_status()
-            data, media_type = resp.content, resp.headers.get("content-type", "image/jpeg").split(";")[0]
-        else:
-            path = (DATA_DIR / ref.removeprefix("/static/").lstrip("/")).resolve()
-            if DATA_DIR.resolve() not in path.parents:
-                return None
-            data, media_type = path.read_bytes(), mimetypes.guess_type(path.name)[0] or "image/jpeg"
-    except (httpx.HTTPError, OSError) as exc:
-        log.info("image unavailable %s: %s", ref, exc)
-        return None
-    if media_type not in {"image/jpeg", "image/png", "image/gif", "image/webp"}:
-        return None
-    return {
-        "type": "image",
-        "source": {"type": "base64", "media_type": media_type, "data": base64.b64encode(data).decode()},
-    }
 
 
 def has_real_transcript(evidence: Evidence | None) -> bool:
@@ -203,7 +253,7 @@ def build_evidence(video: Video, item: dict, evidence: Evidence | None, today: d
         "transcript_source": evidence.transcript_source if evidence else None,
         "transcript_language": evidence.transcript_language if evidence else None,
         "transcript": (evidence.transcript or "")[:MAX_TRANSCRIPT_CHARS] if has_real_transcript(evidence) else None,
-        "top_comments": [c["text"] for c in (evidence.top_comments_json or [])] if evidence else [],
+        "top_comments": [c["text"] for c in (evidence.top_comments_json or [])[:MAX_COMMENTS]] if evidence else [],
         "comments_status": evidence.comments_status if evidence else None,
         "uae_calendar_context": calendar_context(today.date()),
     }
@@ -213,13 +263,6 @@ def build_evidence(video: Video, item: dict, evidence: Evidence | None, today: d
     return {k: v for k, v in payload.items() if v not in (None, [], "")}
 
 
-def image_refs(video: Video) -> list[str]:
-    raw = video.raw_json or {}
-    refs = [video.thumbnail] if video.thumbnail else []
-    refs += raw.get("frames") or []
-    return refs[:MAX_IMAGES]
-
-
 def parse_result(text: str) -> AnalysisResult:
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end == -1:
@@ -227,31 +270,13 @@ def parse_result(text: str) -> AnalysisResult:
     return AnalysisResult.model_validate(json.loads(text[start : end + 1]))
 
 
-def api_error_message(exc: APIStatusError) -> str:
-    body = exc.body if isinstance(exc.body, dict) else {}
-    error = body.get("error") if isinstance(body.get("error"), dict) else body
-    return str(error.get("message") or exc.message)
-
-
-async def call_llm(client: AsyncAnthropic, evidence: dict, images: list[dict]) -> AnalysisResult:
-    labels = ["thumbnail"] + [f"frame {i}" for i in range(1, len(images))]
-    intro = f"Images attached in order: {', '.join(labels[: len(images)])}." if images else "No images available."
-    content = [
-        *images,
-        {"type": "text", "text": f"{intro}\n\nEvidence (JSON):\n{json.dumps(evidence, ensure_ascii=False, indent=1)}"},
+async def call_llm(provider: OllamaProvider | MockProvider, evidence: dict) -> AnalysisResult:
+    messages: list[dict] = [
+        {"role": "user", "content": f"Evidence (JSON):\n{json.dumps(evidence, ensure_ascii=False, indent=1)}"}
     ]
-    messages: list[dict] = [{"role": "user", "content": content}]
     last_error: Exception | None = None
     for _attempt in range(2):
-        try:
-            resp = await client.messages.create(
-                model=settings.llm_model, max_tokens=4096, system=SYSTEM_PROMPT, messages=messages
-            )
-        except APIStatusError as exc:
-            raise AnalysisError(f"Anthropic API error ({exc.status_code}): {api_error_message(exc)}") from exc
-        except APIConnectionError as exc:
-            raise AnalysisError(f"Could not reach the Anthropic API: {exc}") from exc
-        text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
+        text = await provider.chat(system=SYSTEM_PROMPT, messages=messages, format=AnalysisResult.model_json_schema())
         try:
             return parse_result(text)
         except (ValueError, ValidationError) as exc:
@@ -280,6 +305,7 @@ def serialize_analysis(row: Analysis, cached: bool) -> dict:
     return {
         "platform": row.platform,
         "video_id": row.video_id,
+        "status": "ready",
         "model": row.model,
         "prompt_version": row.prompt_version,
         "created_at": row.created_at.isoformat(),
@@ -292,7 +318,7 @@ async def get_or_create_analysis(
     session: Session,
     platform: str,
     video_id: str,
-    client: AsyncAnthropic | None = None,
+    llm: OllamaProvider | MockProvider | None = None,
     youtube: YouTubeClient | None = None,
     force: bool = False,
 ) -> tuple[Analysis, bool]:
@@ -323,14 +349,12 @@ async def get_or_create_analysis(
                 session.rollback()
                 log.warning("could not refresh evidence for %s: %s", key, exc)
 
-        client = client or anthropic_client()
+        llm = llm or llm_provider()
         today = datetime.now(ZoneInfo(MARKET.timezone))
         payload = build_evidence(video, item, evidence, today)
-        async with httpx.AsyncClient(timeout=15) as http:
-            images = [b for b in await asyncio.gather(*(load_image(r, http) for r in image_refs(video))) if b]
 
         async with _semaphore:
-            result = await call_llm(client, payload, images)
+            result = await call_llm(llm, payload)
 
         if not has_real_transcript(evidence):
             result.confidence = "low"

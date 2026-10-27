@@ -45,8 +45,10 @@ YOUTUBE_CATEGORIES: dict[str, str] = {
 @dataclass(frozen=True)
 class Settings:
     youtube_api_key: str = field(default_factory=lambda: os.getenv("YOUTUBE_API_KEY", ""))
-    anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
-    llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL") or "claude-opus-5-5")
+    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "ollama"))
+    llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL") or "qwen3:8b")
+    ollama_base_url: str = field(default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+    llm_timeout_seconds: int = 600  # CPU-only inference can take minutes
     database_url: str = field(
         default_factory=lambda: os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'dashboard.db'}")
     )
