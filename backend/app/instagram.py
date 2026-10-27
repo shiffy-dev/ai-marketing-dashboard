@@ -8,6 +8,7 @@ dataset_meta and surfaced in the trending payload.
 
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from .trending import INSTAGRAM
 
 log = logging.getLogger(__name__)
 
-DATASET_FILE = DATA_DIR / "instagram_reels.json"
+DATASET_FILE = Path(os.getenv("INSTAGRAM_DATASET") or DATA_DIR / "instagram_reels.json")
 SEED_FILE = DATA_DIR / "seed_reels.json"
 
 
@@ -52,6 +53,8 @@ def load_instagram_dataset(session: Session, path: Path | None = None) -> dict |
     path = path or (DATASET_FILE if DATASET_FILE.exists() else SEED_FILE)
     if not path.exists():
         log.warning("no instagram dataset found (%s or %s missing)", DATASET_FILE.name, SEED_FILE.name)
+        return None
+    if path.stat().st_size == 0:  # tests point INSTAGRAM_DATASET at an empty file to skip startup loading
         return None
     sample = path == SEED_FILE
     try:

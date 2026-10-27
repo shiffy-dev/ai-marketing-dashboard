@@ -1,0 +1,306 @@
+{
+  "scraped_at": "2026-10-27T08:00:00+00:00",
+  "source": "seed",
+  "reels": [
+    {
+      "id": "seed01",
+      "url": "https://www.instagram.com/reel/seed01/",
+      "account": "sample.ae.shop",
+      "followers": 29000,
+      "caption": "SAMPLE reel 1: placeholder caption for a UAE ecommerce product video #sample1",
+      "hashtags": [
+        "sample1",
+        "DubaiShopping",
+        "UAE"
+      ],
+      "audio": "Original audio — sample.ae.shop",
+      "plays": 19200,
+      "likes": 652,
+      "comments": 39,
+      "comments_disabled": false,
+      "posted_at": "2026-10-20T23:00:00+00:00",
+      "top_comments": [
+        {
+          "text": "Sample comment: where can I buy this?",
+          "likes": 5
+        }
+      ],
+      "transcript": "Sample transcript for reel 1: a short hook, a product demo, and a link-in-bio call to action.",
+      "transcript_language": "en",
+      "duration_seconds": 21,
+      "frames": [],
+      "thumbnail": "/static/seed/seed01.svg",
+      "reviewer_notes": "Placeholder reel from data/seed_reels.json — replace with a real export."
+    },
+    {
+      "id": "seed02",
+      "url": "https://www.instagram.com/reel/seed02/",
+      "account": "sample.dubaideals",
+      "followers": 38000,
+      "caption": "SAMPLE reel 2: placeholder caption for a UAE ecommerce product video #sample2",
+      "hashtags": [
+        "sample2",
+        "DubaiShopping",
+        "UAE"
+      ],
+      "audio": "Original audio — sample.dubaideals",
+      "plays": 34200,
+      "likes": 1299,
+      "comments": 77,
+      "comments_disabled": false,
+      "posted_at": "2026-10-21T10:00:00+00:00",
+      "top_comments": [
+        {
+          "text": "Sample comment: where can I buy this?",
+          "likes": 6
+        }
+      ],
+      "transcript": "Sample transcript for reel 2: a short hook, a product demo, and a link-in-bio call to action.",
+      "transcript_language": "en",
+      "duration_seconds": 22,
+      "frames": [],
+      "thumbnail": "/static/seed/seed02.svg",
+      "reviewer_notes": "Placeholder reel from data/seed_reels.json — replace with a real export."
+    },
+    {
+      "id": "seed03",
+      "url": "https://www.instagram.com/reel/seed03/",
+      "account": "sample.gulfgadgets",
+      "followers": 47000,
+      "caption": "SAMPLE reel 3: placeholder caption for a UAE ecommerce product video #sample3",
+      "hashtags": [
+        "sample3",
+        "DubaiShopping",
+        "UAE"
+      ],
+      "audio": "Original audio — sample.gulfgadgets",
+      "plays": 49200,
+      "likes": 2066,
+      "comments": 123,
+      "comments_disabled": false,
+      "posted_at": "2026-10-21T21:00:00+00:00",
+      "top_comments": [
+        {
+          "text": "Sample comment: where can I buy this?",
+          "likes": 7
+        }
+      ],
+      "transcript": "Sample transcript for reel 3: a short hook, a product demo, and a link-in-bio call to action.",
+      "transcript_language": "en",
+      "duration_seconds": 23,
+      "frames": [],
+      "thumbnail": "/static/seed/seed03.svg",
+      "reviewer_notes": "Placeholder reel from data/seed_reels.json — replace with a real export."
+    },
+    {
+      "id": "seed04",
+      "url": "https://www.instagram.com/reel/seed04/",
+      "account": "sample.uaefinds",
+      "followers": 56000,
+      "caption": "SAMPLE reel 4: placeholder caption for a UAE ecommerce product video #sample4",
+      "hashtags": [
+        "sample4",
+        "DubaiShopping",
+        "UAE"
+      ],
+      "audio": "Original audio — sample.uaefinds",
+      "plays": 64200,
+      "likes": 2953,
+      "comments": 177,
+      "comments_disabled": false,
+      "posted_at": "2026-10-22T08:00:00+00:00",
+      "top_comments": [
+        {
+          "text": "Sample comment: where can I buy this?",
+          "likes": 8
+        }
+      ],
+      "transcript": "Sample transcript for reel 4: a short hook, a product demo, and a link-in-bio call to action.",
+      "transcript_language": "en",
+      "duration_seconds": 24,
+      "frames": [],
+      "thumbnail": "/static/seed/seed04.svg",
+      "reviewer_notes": "Placeholder reel from data/seed_reels.json — replace with a real export."
+    },
+    {
+      "id": "seed05",
+      "url": "https://www.instagram.com/reel/seed05/",
+      "account": "sample.martdubai",
+      "followers": 65000,
+      "caption": "SAMPLE reel 5: placeholder caption for a UAE ecommerce product video #sample5",
+      "hashtags": [
+        "sample5",
+        "DubaiShopping",
+        "UAE"
+      ],
+      "audio": "Original audio — sample.martdubai",
+      "plays": 79200,
+      "likes": 3960,
+      "comments": 237,
+      "comments_disabled": false,
+      "posted_at": "2026-10-22T19:00:00+00:00",
+      "top_comments": [
+        {
+          "text": "Sample comment: where can I buy this?",
+          "likes": 9
+        }
+      ],
+      "transcript": "Sample transcript for reel 5: a short hook, a product demo, and a link-in-bio call to action.",
+      "transcript_language": "en",
+      "duration_seconds": 25,
+      "frames": [],
+      "thumbnail": "/static/seed/seed05.svg",
+      "reviewer_notes": "Placeholder reel from data/seed_reels.json — replace with a real export."
+    },
+    {
+      "id": "seed06",
+      "url": "https://www.instagram.com/reel/seed06/",
+      "account": "sample.soukonline",
+      "followers": 74000,
+      "caption": "SAMPLE reel 6: placeholder caption for a UAE ecommerce product video #sample6",
+      "hashtags": [
+        "sample6",
+        "DubaiShopping",
+        "UAE"
+      ],
+      "audio": "Original audio — sample.soukonline",
+      "plays": 94200,
+      "likes": 5086,
+      "comments": 305,
+      "comments_disabled": false,
+      "posted_at": "2026-10-23T06:00:00+00:00",
+      "top_comments": [
+        {
+          "text": "Sample comment: where can I buy this?",
+          "likes": 10
+        }
+      ],
+      "transcript": "Sample transcript for reel 6: a short hook, a product demo, and a link-in-bio call to action.",
+      "transcript_language": "en",
+      "duration_seconds": 26,
+      "frames": [],
+      "thumbnail": "/static/seed/seed06.svg",
+      "reviewer_notes": "Placeholder reel from data/seed_reels.json — replace with a real export."
+    },
+    {
+      "id": "seed07",
+      "url": "https://www.instagram.com/reel/seed07/",
+      "account": "sample.emiratistyle",
+      "followers": 83000,
+      "caption": "SAMPLE reel 7: placeholder caption for a UAE ecommerce product video #sample7",
+      "hashtags": [
+        "sample7",
+        "DubaiShopping",
+        "UAE"
+      ],
+      "audio": "Original audio — sample.emiratistyle",
+      "plays": 109200,
+      "likes": 6333,
+      "comments": 379,
+      "comments_disabled": false,
+      "posted_at": "2026-10-23T17:00:00+00:00",
+      "top_comments": [
+        {
+          "text": "Sample comment: where can I buy this?",
+          "likes": 11
+        }
+      ],
+      "transcript": "Sample transcript for reel 7: a short hook, a product demo, and a link-in-bio call to action.",
+      "transcript_language": "en",
+      "duration_seconds": 27,
+      "frames": [],
+      "thumbnail": "/static/seed/seed07.svg",
+      "reviewer_notes": "Placeholder reel from data/seed_reels.json — replace with a real export."
+    },
+    {
+      "id": "seed08",
+      "url": "https://www.instagram.com/reel/seed08/",
+      "account": "sample.dxbhome",
+      "followers": 92000,
+      "caption": "SAMPLE reel 8: placeholder caption for a UAE ecommerce product video #sample8",
+      "hashtags": [
+        "sample8",
+        "DubaiShopping",
+        "UAE"
+      ],
+      "audio": "Original audio — sample.dxbhome",
+      "plays": 124200,
+      "likes": 7700,
+      "comments": 462,
+      "comments_disabled": false,
+      "posted_at": "2026-10-24T04:00:00+00:00",
+      "top_comments": [
+        {
+          "text": "Sample comment: where can I buy this?",
+          "likes": 12
+        }
+      ],
+      "transcript": "Sample transcript for reel 8: a short hook, a product demo, and a link-in-bio call to action.",
+      "transcript_language": "en",
+      "duration_seconds": 28,
+      "frames": [],
+      "thumbnail": "/static/seed/seed08.svg",
+      "reviewer_notes": "Placeholder reel from data/seed_reels.json — replace with a real export."
+    },
+    {
+      "id": "seed09",
+      "url": "https://www.instagram.com/reel/seed09/",
+      "account": "sample.camelsouk",
+      "followers": 101000,
+      "caption": "SAMPLE reel 9: placeholder caption for a UAE ecommerce product video #sample9",
+      "hashtags": [
+        "sample9",
+        "DubaiShopping",
+        "UAE"
+      ],
+      "audio": "Original audio — sample.camelsouk",
+      "plays": 139200,
+      "likes": 9187,
+      "comments": 551,
+      "comments_disabled": false,
+      "posted_at": "2026-10-24T15:00:00+00:00",
+      "top_comments": [
+        {
+          "text": "Sample comment: where can I buy this?",
+          "likes": 13
+        }
+      ],
+      "transcript": "Sample transcript for reel 9: a short hook, a product demo, and a link-in-bio call to action.",
+      "transcript_language": "en",
+      "duration_seconds": 29,
+      "frames": [],
+      "thumbnail": "/static/seed/seed09.svg",
+      "reviewer_notes": "Placeholder reel from data/seed_reels.json — replace with a real export."
+    },
+    {
+      "id": "seed10",
+      "url": "https://www.instagram.com/reel/seed10/",
+      "account": "sample.noonfinds",
+      "followers": 110000,
+      "caption": "SAMPLE reel 10: placeholder caption for a UAE ecommerce product video #sample10",
+      "hashtags": [
+        "sample10",
+        "DubaiShopping",
+        "UAE"
+      ],
+      "audio": "Original audio — sample.noonfinds",
+      "plays": 154200,
+      "likes": 10794,
+      "comments": 647,
+      "comments_disabled": false,
+      "posted_at": "2026-10-25T02:00:00+00:00",
+      "top_comments": [
+        {
+          "text": "Sample comment: where can I buy this?",
+          "likes": 14
+        }
+      ],
+      "transcript": "Sample transcript for reel 10: a short hook, a product demo, and a link-in-bio call to action.",
+      "transcript_language": "en",
+      "duration_seconds": 30,
+      "frames": [],
+      "thumbnail": "/static/seed/seed10.svg",
+      "reviewer_notes": "Placeholder reel from data/seed_reels.json — replace with a real export."
+    }
+  ]
+}

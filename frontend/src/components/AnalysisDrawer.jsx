@@ -97,7 +97,10 @@ export default function AnalysisDrawer({ item, onClose }) {
               </h2>
               <p dir="auto" className="mt-2 text-sm text-muted">
                 {item.channel}
-                {item.followers_or_subs ? ` · ${formatCompact(item.followers_or_subs)} subscribers` : ''} ·{' '}
+                {item.followers_or_subs
+                  ? ` · ${formatCompact(item.followers_or_subs)} ${item.platform === 'youtube' ? 'subscribers' : 'followers'}`
+                  : ''}{' '}
+                ·{' '}
                 {timeAgo(item.published_at)}
               </p>
               <div className="mt-4 flex flex-wrap gap-2">

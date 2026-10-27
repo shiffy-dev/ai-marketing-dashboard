@@ -225,3 +225,4 @@ data/*.db-shm
 data/*.db-wal
 node_modules/
 frontend/dist/
+backend/tests/_empty_dataset.json

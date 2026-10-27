@@ -4,6 +4,11 @@ from pathlib import Path
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ.setdefault("YOUTUBE_API_KEY", "test-key")
+os.environ["LLM_PROVIDER"] = "mock"
+# Empty dataset file: the app's startup loader becomes a no-op, so each test seeds its own reels.
+_EMPTY_DATASET = Path(__file__).resolve().parent / "_empty_dataset.json"
+_EMPTY_DATASET.write_text("")
+os.environ["INSTAGRAM_DATASET"] = str(_EMPTY_DATASET)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from datetime import datetime, timedelta, timezone  # noqa: E402
