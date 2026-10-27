@@ -288,6 +288,7 @@ async def get_or_create_analysis(
         video, item = found
 
         evidence = session.scalar(select(Evidence).where(Evidence.platform == platform, Evidence.video_id == video_id))
+        session.commit()  # end the read transaction before the slow network/LLM awaits
         if platform == YOUTUBE:
             try:
                 evidence = await ensure_youtube_evidence(session, video)
