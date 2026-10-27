@@ -10,12 +10,15 @@ from sqlalchemy.orm import Session
 from .config import MARKET, NOISE_CATEGORY_IDS, YOUTUBE_CATEGORIES, settings
 from .metrics import compute_metrics, score_items
 from .models import Evidence, Video, VideoSnapshot, utcnow
-from .youtube import YouTubeClient, best_thumbnail, fetch_transcript, parse_ts
+from .youtube import YouTubeClient, best_thumbnail, fetch_transcript, parse_duration, parse_ts
 
 log = logging.getLogger(__name__)
 
 YOUTUBE = "youtube"
 PLATFORMS = (YOUTUBE, "instagram")
+
+# YouTube allows Shorts up to 3 minutes; the API has no isShort flag, so duration is the signal.
+SHORT_MAX_SECONDS = 180
 
 # Outcome of the most recent refresh attempt per platform (process-local).
 refresh_status: dict[str, dict] = {}
@@ -33,6 +36,19 @@ def latest_capture(session: Session, platform: str) -> datetime | None:
 
 def is_stale(captured_at: datetime | None, hours: int = settings.youtube_stale_hours) -> bool:
     return captured_at is None or utcnow() - captured_at > timedelta(hours=hours)
+
+
+def _apply_snippet(video: Video, item: dict, subs: dict[str, int | None]) -> None:
+    snippet = item.get("snippet", {})
+    video.title = snippet.get("title", "")
+    video.channel = snippet.get("channelTitle", "")
+    video.channel_id = snippet.get("channelId")
+    video.followers_or_subs = subs.get(snippet.get("channelId"))
+    video.published_at = parse_ts(snippet.get("publishedAt"))
+    video.thumbnail = best_thumbnail(snippet.get("thumbnails", {}))
+    video.category_id = snippet.get("categoryId")
+    video.language = snippet.get("defaultAudioLanguage") or snippet.get("defaultLanguage")
+    video.raw_json = item
 
 
 async def refresh_youtube(session: Session, client: YouTubeClient | None = None) -> datetime:
@@ -55,17 +71,9 @@ async def refresh_youtube(session: Session, client: YouTubeClient | None = None)
         )
     }
     for rank, item in enumerate(items, start=1):
-        snippet, stats = item.get("snippet", {}), item.get("statistics", {})
+        stats = item.get("statistics", {})
         video = existing.get(item["id"]) or Video(platform=YOUTUBE, video_id=item["id"])
-        video.title = snippet.get("title", "")
-        video.channel = snippet.get("channelTitle", "")
-        video.channel_id = snippet.get("channelId")
-        video.followers_or_subs = subs.get(snippet.get("channelId"))
-        video.published_at = parse_ts(snippet.get("publishedAt"))
-        video.thumbnail = best_thumbnail(snippet.get("thumbnails", {}))
-        video.category_id = snippet.get("categoryId")
-        video.language = snippet.get("defaultAudioLanguage") or snippet.get("defaultLanguage")
-        video.raw_json = item
+        _apply_snippet(video, item, subs)
         video.fetched_at = captured_at
         session.add(video)
         session.flush()
@@ -86,6 +94,13 @@ async def refresh_youtube(session: Session, client: YouTubeClient | None = None)
     return captured_at
 
 
+def _video_format(video: Video, raw: dict) -> str:
+    if video.platform != YOUTUBE:
+        return "short"  # Instagram Reels are short-form by definition
+    secs = parse_duration(raw.get("contentDetails", {}).get("duration"))
+    return "short" if secs is not None and secs <= SHORT_MAX_SECONDS else "long"
+
+
 def _serialize(video: Video, snap: VideoSnapshot, as_of: datetime) -> dict:
     raw = video.raw_json or {}
     url = raw.get("url") or (f"https://www.youtube.com/watch?v={video.video_id}" if video.platform == YOUTUBE else None)
@@ -103,6 +118,8 @@ def _serialize(video: Video, snap: VideoSnapshot, as_of: datetime) -> dict:
         "language": video.language,
         "published_at": as_utc(video.published_at).isoformat() if video.published_at else None,
         "duration": raw.get("contentDetails", {}).get("duration"),
+        "duration_seconds": parse_duration(raw.get("contentDetails", {}).get("duration")),
+        "format": _video_format(video, raw),
         "chart_rank": snap.rank,
         "views": snap.views,
         "likes": snap.likes,
@@ -228,3 +245,54 @@ def video_item(session: Session, platform: str, video_id: str) -> tuple[Video, d
     if snap is None:
         return None
     return video, _serialize(video, snap, as_utc(snap.captured_at))
+
+
+def _item_from_raw(video: Video, as_of: datetime) -> dict:
+    """Stats/metrics for a video that has no snapshot (fetched on demand, not via a chart)."""
+    stats = (video.raw_json or {}).get("statistics", {})
+    views = int(stats.get("viewCount") or 0)
+    likes = int(stats["likeCount"]) if "likeCount" in stats else None
+    comments = int(stats["commentCount"]) if "commentCount" in stats else None
+    raw = video.raw_json or {}
+    return {
+        "platform": video.platform,
+        "video_id": video.video_id,
+        "url": raw.get("url") or f"https://www.youtube.com/watch?v={video.video_id}",
+        "title": video.title,
+        "channel": video.channel,
+        "channel_id": video.channel_id,
+        "followers_or_subs": video.followers_or_subs,
+        "thumbnail": video.thumbnail,
+        "category_id": video.category_id,
+        "category": YOUTUBE_CATEGORIES.get(video.category_id or ""),
+        "language": video.language,
+        "published_at": as_utc(video.published_at).isoformat() if video.published_at else None,
+        "duration": raw.get("contentDetails", {}).get("duration"),
+        "duration_seconds": parse_duration(raw.get("contentDetails", {}).get("duration")),
+        "format": _video_format(video, raw),
+        "views": views,
+        "likes": likes,
+        "comments": comments,
+        "metrics": compute_metrics(views, likes, comments, video.followers_or_subs, as_utc(video.published_at), as_of),
+    }
+
+
+async def fetch_youtube_video(
+    session: Session, video_id: str, client: YouTubeClient | None = None
+) -> tuple[Video, dict] | None:
+    """Fetch a single video by ID and upsert it. No snapshot is created, so the video never
+    enters a chart listing — it exists so analysis can run on demand."""
+    client = client or YouTubeClient()
+    items = await client.video_details([video_id])
+    item = next((i for i in items if i.get("id") == video_id), None)
+    if item is None:
+        return None
+    subs = await client.channel_subscribers([item.get("snippet", {}).get("channelId")])
+    video = session.scalar(select(Video).where(Video.platform == YOUTUBE, Video.video_id == video_id)) or Video(
+        platform=YOUTUBE, video_id=video_id
+    )
+    _apply_snippet(video, item, subs)
+    video.fetched_at = utcnow()
+    session.add(video)
+    session.commit()
+    return video, _item_from_raw(video, utcnow())

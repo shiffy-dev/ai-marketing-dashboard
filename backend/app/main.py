@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from .analysis import (
     AnalysisError,
+    VideoNotFoundError,
     aggregate,
     analyses_for,
     anthropic_client,
@@ -150,14 +151,15 @@ async def analysis(
     video_id: str,
     session: Session = Depends(get_session),
     client=Depends(llm_client),
+    yt_client: YouTubeClient = Depends(youtube_client),
 ) -> dict:
     if row := cached_analysis(session, platform, video_id):
         return serialize_analysis(row, cached=True)
     if client is None:
         raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY is not set")
     try:
-        row, cached = await get_or_create_analysis(session, platform, video_id, client)
-    except LookupError as exc:
+        row, cached = await get_or_create_analysis(session, platform, video_id, client, youtube=yt_client)
+    except VideoNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"Unknown video {platform}:{video_id}") from exc
     except AnalysisError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

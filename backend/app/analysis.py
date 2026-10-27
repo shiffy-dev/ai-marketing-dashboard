@@ -17,8 +17,9 @@ from sqlalchemy.orm import Session
 from .config import DATA_DIR, MARKET, settings
 from .models import Analysis, Evidence, Video
 from .schemas import AnalysisResult
-from .trending import YOUTUBE, ensure_youtube_evidence, video_item
+from .trending import YOUTUBE, ensure_youtube_evidence, fetch_youtube_video, video_item
 from .uae_calendar import calendar_context
+from .youtube import YouTubeClient
 
 log = logging.getLogger(__name__)
 
@@ -118,6 +119,10 @@ Respond with ONLY a JSON object (no markdown fences, no commentary) matching exa
 
 class AnalysisError(RuntimeError):
     pass
+
+
+class VideoNotFoundError(Exception):
+    """The video is unknown to us and could not be fetched from its platform API."""
 
 
 _semaphore = asyncio.Semaphore(5)
@@ -284,7 +289,12 @@ def serialize_analysis(row: Analysis, cached: bool) -> dict:
 
 
 async def get_or_create_analysis(
-    session: Session, platform: str, video_id: str, client: AsyncAnthropic | None = None, force: bool = False
+    session: Session,
+    platform: str,
+    video_id: str,
+    client: AsyncAnthropic | None = None,
+    youtube: YouTubeClient | None = None,
+    force: bool = False,
 ) -> tuple[Analysis, bool]:
     """Returns (analysis_row, was_cached). Cached by platform:video_id."""
     key = f"{platform}:{video_id}"
@@ -294,8 +304,14 @@ async def get_or_create_analysis(
             return row, True
 
         found = video_item(session, platform, video_id)
+        if found is None and platform == YOUTUBE:
+            try:
+                found = await fetch_youtube_video(session, video_id, youtube)
+            except Exception as exc:
+                session.rollback()
+                log.warning("could not fetch %s from YouTube: %s", key, exc)
         if found is None:
-            raise LookupError(key)
+            raise VideoNotFoundError(key)
         video, item = found
 
         evidence = session.scalar(select(Evidence).where(Evidence.platform == platform, Evidence.video_id == video_id))

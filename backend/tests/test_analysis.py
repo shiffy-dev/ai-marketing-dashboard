@@ -113,6 +113,23 @@ def test_unknown_video_404(setup):
     assert setup.client.get("/api/analysis/youtube/nope").status_code == 404
 
 
+def test_missing_video_fetched_from_youtube(setup):
+    _use(FakeLLM([json.dumps(VALID)]))
+
+    async def no_evidence(session, video):
+        return None
+
+    with patch("app.analysis.ensure_youtube_evidence", side_effect=no_evidence):
+        resp = setup.client.get("/api/analysis/youtube/vid99")
+    assert resp.status_code == 200
+
+    from app import db
+    from app.models import Video
+
+    with db.SessionLocal() as s:
+        assert s.query(Video).filter_by(video_id="vid99").one().title == "Video 99"
+
+
 def test_aggregate_counts(setup):
     _use(FakeLLM([json.dumps(VALID), json.dumps(VALID)]))
     with patch("app.analysis.ensure_youtube_evidence", side_effect=_stored_evidence):

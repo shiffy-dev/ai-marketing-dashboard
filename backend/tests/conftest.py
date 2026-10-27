@@ -37,6 +37,8 @@ def _video(i: int, category: str, views: int, hours_old: int) -> dict:
 
 
 VIDEOS = [_video(i, "10" if i < 3 else "22", 5_000_000 if i < 3 else 10_000 * (i + 1), 5 + i) for i in range(15)]
+# Only reachable via videos.list?id=... — never appears in the chart.
+EXTRA_VIDEO = _video(99, "22", 123_000, 3)
 
 
 class FakeYouTube:
@@ -52,6 +54,10 @@ class FakeYouTube:
         if self.fail:
             return httpx.Response(403, json={"error": {"message": "quota", "errors": [{"reason": "quotaExceeded"}]}})
         if path == "videos":
+            if "id" in request.url.params:
+                ids = set(request.url.params["id"].split(","))
+                items = [v for v in [*VIDEOS, EXTRA_VIDEO] if v["id"] in ids]
+                return httpx.Response(200, json={"items": items})
             assert request.url.params["regionCode"] == "AE"
             return httpx.Response(200, json={"items": VIDEOS})
         if path == "channels":
