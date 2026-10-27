@@ -42,7 +42,7 @@ class VideoSnapshot(Base):
     views: Mapped[int] = mapped_column(Integer, default=0)
     likes: Mapped[int | None] = mapped_column(Integer)
     comments: Mapped[int | None] = mapped_column(Integer)
-    # Position in the source chart (YouTube mostPopular order / dataset order).
+    # Position in the source chart (YouTube mostPopular order / dataset order); 0 = not on the chart.
     rank: Mapped[int] = mapped_column(Integer)
 
     video: Mapped[Video] = relationship(back_populates="snapshots")
@@ -60,6 +60,14 @@ class Analysis(Base):
     result_json: Mapped[dict] = mapped_column(JSON)
     confidence: Mapped[str] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DatasetMeta(Base):
+    __tablename__ = "dataset_meta"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class Evidence(Base):

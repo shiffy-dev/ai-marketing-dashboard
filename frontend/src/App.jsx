@@ -1,43 +1,50 @@
-import { useCallback, useState } from 'react'
-import useSWR, { useSWRConfig } from 'swr'
-import { aggregateKey, refreshYoutube, trendingKey } from './api.js'
-import AggregateStrip from './components/AggregateStrip.jsx'
-import AnalysisDrawer from './components/AnalysisDrawer.jsx'
-import Header from './components/Header.jsx'
-import Hero from './components/Hero.jsx'
-import VideoCard, { VideoCardSkeleton } from './components/VideoCard.jsx'
-import { Notice, Section } from './components/ui.jsx'
+import { useCallback, useState } from "react";
+import useSWR, { useSWRConfig } from "swr";
+import { aggregateKey, refreshPlatform, trendingKey } from "./api.js";
+import AggregateStrip from "./components/AggregateStrip.jsx";
+import AnalysisDrawer from "./components/AnalysisDrawer.jsx";
+import Footer from "./components/Footer.jsx";
+import Header from "./components/Header.jsx";
+import Hero from "./components/Hero.jsx";
+import VideoCard, { VideoCardSkeleton } from "./components/VideoCard.jsx";
+import { Notice, Section } from "./components/ui.jsx";
 
 export default function App() {
-  const [platform, setPlatform] = useState('youtube')
-  const [relevant, setRelevant] = useState(true)
-  const [selected, setSelected] = useState(null)
-  const [refreshing, setRefreshing] = useState(false)
-  const [refreshError, setRefreshError] = useState(null)
-  const { mutate: globalMutate } = useSWRConfig()
+  const [platform, setPlatform] = useState("youtube");
+  const [relevant, setRelevant] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState(null);
+  const { mutate: globalMutate } = useSWRConfig();
 
-  const key = trendingKey(platform, relevant)
-  const { data, error, isLoading, mutate } = useSWR(key)
-  const items = data?.items || []
+  const key = trendingKey(platform, relevant);
+  const { data, error, isLoading, mutate } = useSWR(key);
+  const items = data?.items || [];
 
   const onRefresh = useCallback(async () => {
-    setRefreshing(true)
-    setRefreshError(null)
+    setRefreshing(true);
+    setRefreshError(null);
     try {
-      await mutate(await refreshYoutube(relevant), { revalidate: false })
-      globalMutate(aggregateKey(platform, relevant))
+      await mutate(await refreshPlatform(platform, relevant), {
+        revalidate: false,
+      });
+      globalMutate(aggregateKey(platform, relevant));
     } catch (e) {
-      setRefreshError(e.message)
+      setRefreshError(e.message);
     } finally {
-      setRefreshing(false)
+      setRefreshing(false);
     }
-  }, [mutate, globalMutate, platform, relevant])
+  }, [mutate, globalMutate, platform, relevant]);
 
-  const closeDrawer = useCallback(() => setSelected(null), [])
+  const closeDrawer = useCallback(() => setSelected(null), []);
+  const switchPlatform = useCallback((p) => {
+    setPlatform(p);
+    setSelected(null);
+  }, []);
 
   return (
     <div className="min-h-screen">
-      <Header platform={platform} onPlatform={(p) => (setPlatform(p), setSelected(null))} />
+      <Header platform={platform} onPlatform={switchPlatform} />
       <main>
         <Hero
           platform={platform}
@@ -50,7 +57,13 @@ export default function App() {
         />
 
         <Section
-          eyebrow={platform === 'youtube' ? 'Top 10 · ranked by velocity + outlier ratio' : 'Trending among tracked UAE accounts'}
+          eyebrow={
+            platform === "youtube"
+              ? "Top 10 · ranked by velocity + outlier ratio"
+              : data?.dataset?.sample
+                ? "Sample data · placeholder reels"
+                : "Trending among tracked UAE accounts"
+          }
           title="The videos, and why they work."
         >
           {refreshError && (
@@ -74,38 +87,43 @@ export default function App() {
             </Notice>
           )}
           {!error && isLoading && (
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-5 lg:grid-cols-2">
               {Array.from({ length: 6 }, (_, i) => (
                 <VideoCardSkeleton key={i} />
               ))}
             </div>
           )}
           {!error && !isLoading && items.length === 0 && (
-            <Notice title={platform === 'instagram' ? 'No Instagram data yet' : 'No trending videos yet'}>
-              {platform === 'instagram'
-                ? 'Instagram Reels come from a curated dataset that hasn’t been loaded yet.'
-                : 'Nothing stored yet. Try refreshing from YouTube.'}
+            <Notice
+              title={
+                platform === "instagram"
+                  ? "No Instagram data yet"
+                  : "No trending videos yet"
+              }
+            >
+              {platform === "instagram"
+                ? "Instagram Reels come from a curated dataset that hasn’t been loaded yet."
+                : "Nothing stored yet. Try refreshing from YouTube."}
             </Notice>
           )}
           {items.length > 0 && (
             <>
               <AggregateStrip platform={platform} relevant={relevant} />
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-5 md:gap-6 lg:grid-cols-2">
                 {items.map((item) => (
-                  <VideoCard key={item.video_id} item={item} onOpen={setSelected} />
+                  <VideoCard
+                    key={item.video_id}
+                    item={item}
+                    onOpen={setSelected}
+                  />
                 ))}
               </div>
             </>
           )}
         </Section>
       </main>
-      <footer className="bg-navy">
-        <div className="mx-auto max-w-page px-5 py-10 text-xs text-slate md:px-gutter">
-          UAE market only · YouTube data via the official YouTube Data API · Analyses generated by Claude from transcripts,
-          comments and thumbnails, with cited evidence.
-        </div>
-      </footer>
+      <Footer onPlatform={switchPlatform} />
       {selected && <AnalysisDrawer item={selected} onClose={closeDrawer} />}
     </div>
-  )
+  );
 }

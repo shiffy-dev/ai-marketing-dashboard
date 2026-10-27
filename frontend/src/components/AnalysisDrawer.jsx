@@ -1,10 +1,22 @@
-import { useEffect, useState } from 'react'
-import { generateAnalysis } from '../api.js'
-import { formatCompact, formatPercent, formatRatio, formatVelocity, timeAgo } from '../format.js'
-import { Badge, ConfidenceBadge, Eyebrow, Notice, Skeleton } from './ui.jsx'
-import { useAnalysis } from './VideoCard.jsx'
+import { useEffect, useState } from "react";
+import { generateAnalysis } from "../api.js";
+import {
+  formatCompact,
+  formatPercent,
+  formatRatio,
+  formatVelocity,
+  timeAgo,
+} from "../format.js";
+import { Badge, ConfidenceBadge, Eyebrow, Notice, Skeleton } from "./ui.jsx";
+import { useAnalysis } from "./VideoCard.jsx";
 
-const DRIVER_LABEL = { content: 'Content', distribution: 'Distribution', context: 'Context' }
+const unquote = (s) => s.trim().replace(/^["“”']+|["“”']+$/g, "");
+
+const DRIVER_LABEL = {
+  content: "Content",
+  distribution: "Distribution",
+  context: "Context",
+};
 
 function PartCard({ label, title, children }) {
   return (
@@ -17,16 +29,20 @@ function PartCard({ label, title, children }) {
       )}
       <div className="text-sm text-muted">{children}</div>
     </div>
-  )
+  );
 }
 
 function Metric({ label, value }) {
   return (
     <div>
-      <p className="text-eyebrow uppercase text-soft">{label}</p>
-      <p className="mt-1 font-serif text-h3 font-bold text-brand">{value}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-soft">
+        {label}
+      </p>
+      <p className="mt-1 text-h3 font-extrabold tabular-nums text-navy">
+        {value}
+      </p>
     </div>
-  )
+  );
 }
 
 function DrawerSkeleton() {
@@ -40,90 +56,146 @@ function DrawerSkeleton() {
       <Skeleton className="h-6 w-56" />
       <Skeleton className="h-24 rounded-card" />
       <Skeleton className="h-24 rounded-card" />
-      <p className="text-sm text-soft">Analysing transcript, comments and thumbnail…</p>
+      <p className="text-sm text-soft">
+        Analysing transcript, comments and thumbnail…
+      </p>
     </div>
-  )
+  );
 }
 
 export default function AnalysisDrawer({ item, onClose }) {
-  const { data, error, isLoading, mutate } = useAnalysis(item.platform, item.video_id)
-  const [generating, setGenerating] = useState(false)
-  const [genError, setGenError] = useState(null)
-  const a = data?.analysis
-  const pending = data?.status === 'pending'
-  const m = item.metrics || {}
-  const ev = item.evidence
+  const { data, error, isLoading, mutate } = useAnalysis(
+    item.platform,
+    item.video_id,
+  );
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState(null);
+  const a = data?.analysis;
+  const pending = data?.status === "pending";
+  const m = item.metrics || {};
+  const ev = item.evidence;
 
   const analyzeNow = async () => {
-    setGenerating(true)
-    setGenError(null)
+    setGenerating(true);
+    setGenError(null);
     try {
-      await generateAnalysis(item.platform, item.video_id)
-      await mutate()
+      await generateAnalysis(item.platform, item.video_id);
+      await mutate();
     } catch (e) {
-      setGenError(e.message)
+      setGenError(e.message);
     } finally {
-      setGenerating(false)
+      setGenerating(false);
     }
-  }
+  };
 
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose()
-    document.addEventListener('keydown', onKey)
-    document.body.style.overflow = 'hidden'
+    const onKey = (e) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
     return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = ''
-    }
-  }, [onClose])
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <div
+      className="fixed inset-0 z-50 flex justify-end"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="drawer-title"
+    >
       <div className="absolute inset-0 bg-navy/50" onClick={onClose} />
-      <div className="relative flex h-full w-full max-w-[920px] flex-col overflow-y-auto bg-white shadow-drawer">
+      <div className="relative flex h-full w-full max-w-[920px] flex-col overflow-y-auto bg-page-soft shadow-drawer">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-rule bg-white px-6 py-4 md:px-10">
-          <p className="text-eyebrow uppercase text-brand">#{item.rank} in the UAE</p>
-          <button onClick={onClose} className="btn btn-secondary min-h-0 px-3 py-1.5" aria-label="Close">
-            Close ✕
+          <p className="text-eyebrow uppercase text-brand">
+            #{item.rank} in the UAE
+          </p>
+          <button
+            onClick={onClose}
+            className="btn btn-secondary min-h-0 px-3 py-1.5"
+            aria-label="Close"
+          >
+            ✕
           </button>
         </div>
 
-        <div className="space-y-12 px-6 py-8 md:px-10 md:py-10">
-          <div className="grid gap-6 md:grid-cols-[280px_1fr]">
-            {item.thumbnail && <img src={item.thumbnail} alt="" className="w-full rounded-card border border-rule" />}
+        <div className="space-y-10 px-5 py-6 md:px-10 md:py-10">
+          <div className="card grid gap-6 p-5 shadow-card sm:grid-cols-[180px_1fr] md:p-6">
+            {item.thumbnail && (
+              <img
+                src={item.thumbnail}
+                alt=""
+                className="aspect-[9/16] w-full max-w-[180px] rounded-card border border-rule object-cover"
+              />
+            )}
             <div>
               <h2 id="drawer-title" dir="auto" className="text-band">
                 {item.title}
               </h2>
               <p dir="auto" className="mt-2 text-sm text-muted">
                 {item.channel}
-                {item.followers_or_subs ? ` · ${formatCompact(item.followers_or_subs)} subscribers` : ''} ·{' '}
-                {timeAgo(item.published_at)}
+                {item.followers_or_subs
+                  ? ` · ${formatCompact(item.followers_or_subs)} ${item.platform === "youtube" ? "subscribers" : "followers"}`
+                  : ""}{" "}
+                · {timeAgo(item.published_at)}
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
-                {a && <ConfidenceBadge level={a.confidence} label="overall confidence" />}
-                {a?.language && <Badge>Language: {a.language}</Badge>}
-                {item.category && <Badge>{item.category}</Badge>}
-                {ev && (
-                  <Badge tone={ev.transcript_source === 'captions' ? 'green' : 'amber'}>
-                    {ev.transcript_source === 'captions' ? `Transcript (${ev.transcript_language || '?'})` : 'No transcript'}
+                {a && (
+                  <ConfidenceBadge
+                    level={a.confidence}
+                    label="overall confidence"
+                  />
+                )}
+                {a?.language && (
+                  <Badge title={a.language}>
+                    <span className="block max-w-[240px] truncate">
+                      Language: {a.language}
+                    </span>
                   </Badge>
                 )}
-                {ev && <Badge>{ev.comments_status === 'ok' ? `${ev.comments} comments read` : `Comments ${ev.comments_status}`}</Badge>}
+                {item.category && <Badge>{item.category}</Badge>}
+                {ev && (
+                  <Badge
+                    tone={
+                      ev.transcript_source === "captions" ? "green" : "amber"
+                    }
+                  >
+                    {ev.transcript_source === "captions"
+                      ? `Transcript (${ev.transcript_language || "?"})`
+                      : "No transcript"}
+                  </Badge>
+                )}
+                {ev && (
+                  <Badge>
+                    {ev.comments_status === "ok"
+                      ? `${ev.comments} comments read`
+                      : `Comments ${ev.comments_status}`}
+                  </Badge>
+                )}
               </div>
               {item.url && (
-                <a href={item.url} target="_blank" rel="noreferrer" className="mt-4 inline-block text-sm font-bold text-brand hover:underline">
-                  Watch on {item.platform === 'youtube' ? 'YouTube' : 'Instagram'} →
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-block text-sm font-bold text-brand hover:underline"
+                >
+                  Watch on{" "}
+                  {item.platform === "youtube" ? "YouTube" : "Instagram"} →
                 </a>
               )}
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-6 border-y border-rule py-6 md:grid-cols-4">
+          <div className="card grid grid-cols-2 gap-6 p-5 shadow-card md:grid-cols-4 md:p-6">
             <Metric label="Views" value={formatCompact(item.views)} />
             <Metric label="Velocity" value={formatVelocity(m.velocity)} />
             <Metric label="Outlier" value={formatRatio(m.outlier_ratio)} />
-            <Metric label="Engagement" value={formatPercent(m.engagement_rate, 2)} />
+            <Metric
+              label="Engagement"
+              value={formatPercent(m.engagement_rate, 2)}
+            />
           </div>
 
           {isLoading && <DrawerSkeleton />}
@@ -155,8 +227,9 @@ export default function AnalysisDrawer({ item, onClose }) {
                 </button>
               }
             >
-              No stored analysis for this video yet. Analyzing on the local model can take a few
-              minutes on CPU — or run scripts/prewarm.py to analyze the whole top 10 offline.
+              No stored analysis for this video yet. Analyze it now with Claude
+              Code (uses your logged-in subscription, usually under a minute) —
+              or run scripts/prewarm.py to analyze the whole top 10 in one go.
             </Notice>
           )}
 
@@ -165,9 +238,14 @@ export default function AnalysisDrawer({ item, onClose }) {
               <section>
                 <Eyebrow>Hook · Body · CTA</Eyebrow>
                 <div className="grid gap-4 md:grid-cols-3">
-                  <PartCard label="Hook" title={a.hook?.text ? `“${a.hook.text}”` : null}>
+                  <PartCard
+                    label="Hook"
+                    title={a.hook?.text ? `“${unquote(a.hook.text)}”` : null}
+                  >
                     <p>
-                      <span className="font-semibold text-ink">Technique: </span>
+                      <span className="font-semibold text-ink">
+                        Technique:{" "}
+                      </span>
                       {a.hook?.technique}
                     </p>
                   </PartCard>
@@ -180,7 +258,14 @@ export default function AnalysisDrawer({ item, onClose }) {
                       ))}
                     </ul>
                   </PartCard>
-                  <PartCard label="CTA" title={a.cta?.text ? `“${a.cta.text}”` : 'No explicit CTA'}>
+                  <PartCard
+                    label="CTA"
+                    title={
+                      a.cta?.text
+                        ? `“${unquote(a.cta.text)}”`
+                        : "No explicit CTA"
+                    }
+                  >
                     <p>
                       <span className="font-semibold text-ink">Type: </span>
                       {a.cta?.type}
@@ -189,20 +274,34 @@ export default function AnalysisDrawer({ item, onClose }) {
                 </div>
               </section>
 
-              <section className="rounded-card bg-page-soft p-6 md:p-8">
+              <section className="rounded-card border border-rule bg-white p-5 shadow-card md:p-8">
                 <Eyebrow>Why it&rsquo;s performing</Eyebrow>
                 <p className="text-lede text-ink">{a.why_trending?.summary}</p>
                 <ol className="mt-8 space-y-4">
                   {(a.why_trending?.drivers || []).map((d, i) => (
-                    <li key={i} className="card p-6 shadow-card">
+                    <li
+                      key={i}
+                      className="rounded-card border border-rule bg-page-soft p-5 md:p-6"
+                    >
                       <div className="mb-3 flex flex-wrap items-center gap-2">
-                        <span className="font-serif text-h3 font-bold text-brand">{i + 1}</span>
-                        <Badge tone="brand">{DRIVER_LABEL[d.type] || d.type}</Badge>
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-xs font-bold text-white">
+                          {i + 1}
+                        </span>
+                        <Badge tone="brand">
+                          {DRIVER_LABEL[d.type] || d.type}
+                        </Badge>
                         <ConfidenceBadge level={d.confidence} />
                       </div>
-                      <p className="text-card font-semibold text-ink">{d.claim}</p>
-                      <p dir="auto" className="mt-3 border-l-2 border-cyan pl-4 text-sm text-muted">
-                        <span className="font-semibold text-brand">Evidence: </span>
+                      <p className="text-card font-semibold text-ink">
+                        {d.claim}
+                      </p>
+                      <p
+                        dir="auto"
+                        className="mt-3 border-l-2 border-cyan pl-4 text-sm text-muted"
+                      >
+                        <span className="font-semibold text-brand">
+                          Evidence:{" "}
+                        </span>
                         {d.evidence}
                       </p>
                     </li>
@@ -210,22 +309,32 @@ export default function AnalysisDrawer({ item, onClose }) {
                 </ol>
                 <div className="mt-8 grid gap-4 md:grid-cols-2">
                   <div className="card p-6">
-                    <p className="mb-3 text-eyebrow uppercase text-brand">Takeaways for ecommerce</p>
+                    <p className="mb-3 text-eyebrow uppercase text-brand">
+                      Marketing Takeaways 
+                    </p>
                     <ul className="space-y-2 text-sm text-body">
                       {(a.why_trending?.takeaways || []).map((t, i) => (
                         <li key={i} className="flex gap-2">
-                          <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 bg-cyan" />
+                          <span
+                            aria-hidden
+                            className="mt-2 h-1.5 w-1.5 shrink-0 bg-cyan"
+                          />
                           {t}
                         </li>
                       ))}
                     </ul>
                   </div>
                   <div className="card p-6">
-                    <p className="mb-3 text-eyebrow uppercase text-soft">Unknowns</p>
+                    <p className="mb-3 text-eyebrow uppercase text-soft">
+                      Unknown Factors 
+                    </p>
                     <ul className="space-y-2 text-sm text-muted">
                       {(a.why_trending?.unknowns || []).map((u, i) => (
                         <li key={i} className="flex gap-2">
-                          <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 bg-soft" />
+                          <span
+                            aria-hidden
+                            className="mt-2 h-1.5 w-1.5 shrink-0 bg-soft"
+                          />
                           {u}
                         </li>
                       ))}
@@ -242,12 +351,13 @@ export default function AnalysisDrawer({ item, onClose }) {
                 </div>
               )}
               <p className="text-xs text-soft">
-                {data.model} · prompt {data.prompt_version} · generated {timeAgo(data.created_at)}
+                {data.model} · prompt {data.prompt_version} · generated{" "}
+                {timeAgo(data.created_at)}
               </p>
             </>
           )}
         </div>
       </div>
     </div>
-  )
+  );
 }

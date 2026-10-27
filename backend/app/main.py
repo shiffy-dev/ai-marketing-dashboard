@@ -2,8 +2,10 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Literal
 
+import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from .analysis import (
@@ -16,9 +18,12 @@ from .analysis import (
     llm_provider,
     serialize_analysis,
 )
-from .config import MARKET, settings
+from .apify import ApifyError, refresh_instagram
+from .config import DATA_DIR, MARKET, settings
 from .db import SessionLocal, get_session, init_db
+from .instagram import get_dataset_meta, load_instagram_dataset
 from .trending import (
+    INSTAGRAM,
     YOUTUBE,
     collect_youtube_evidence,
     evidence_summary,
@@ -51,10 +56,15 @@ def llm_client():
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    with SessionLocal() as session:
+        load_instagram_dataset(session)
     yield
 
 
 app = FastAPI(title="AI Marketing Dashboard", lifespan=lifespan)
+_static_dir = DATA_DIR / "static"
+_static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_origins),
@@ -82,7 +92,7 @@ def _trending_payload(session: Session, platform: str, relevant: bool, refresh_e
             else None
         )
     last_updated = latest_capture(session, platform)
-    return {
+    payload = {
         "market": MARKET.country,
         "platform": platform,
         "relevant": relevant,
@@ -91,6 +101,9 @@ def _trending_payload(session: Session, platform: str, relevant: bool, refresh_e
         "error": refresh_error,
         "items": items,
     }
+    if platform == INSTAGRAM:
+        payload["dataset"] = get_dataset_meta(session, INSTAGRAM)
+    return payload
 
 
 @app.get("/api/health")
@@ -142,6 +155,22 @@ async def refresh(
         background.add_task(_collect_evidence_background, [i["video_id"] for i in payload["items"]], client)
     elif not payload["items"]:
         raise HTTPException(status_code=502, detail=f"YouTube refresh failed and no stored data: {refresh_error}")
+    return payload
+
+
+@app.post("/api/refresh/instagram")
+async def refresh_instagram_endpoint(relevant: bool = Query(True), session: Session = Depends(get_session)) -> dict:
+    """Re-runs the Apify Instagram actor; on failure serves the stored reels with the error."""
+    refresh_error = None
+    try:
+        await refresh_instagram(session)
+    except (ApifyError, httpx.HTTPError, OSError) as exc:
+        log.warning("Instagram refresh failed, serving stored data: %s", exc)
+        session.rollback()
+        refresh_error = str(exc) or type(exc).__name__
+    payload = _trending_payload(session, INSTAGRAM, relevant, refresh_error)
+    if refresh_error and not payload["items"]:
+        raise HTTPException(status_code=502, detail=f"Instagram refresh failed: {refresh_error}")
     return payload
 
 

@@ -1,43 +1,68 @@
 const PLATFORMS = [
-  { id: 'youtube', label: 'YouTube' },
-  { id: 'instagram', label: 'Instagram Reels' },
-]
+  { id: "youtube", label: "YouTube", sub: "Shorts · 30–60s" },
+  { id: "instagram", label: "Instagram", sub: "Reels" },
+];
 
 export default function Header({ platform, onPlatform }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-rule bg-white">
-      <div className="mx-auto flex max-w-page flex-wrap items-center justify-between gap-4 px-5 py-4 md:px-gutter">
-        <div className="flex items-center gap-4">
-          <img src="/ecomma.png" alt="ecomma" className="h-8 w-auto" />
-          <span className="text-lede font-bold tracking-tight text-navy">AI Marketing Dashboard</span>
-          <span aria-hidden className="hidden h-6 w-px bg-rule sm:block" />
+    <header className="sticky top-0 z-30 border-b border-rule bg-white/95 backdrop-blur">
+      <div className="mx-auto flex max-w-page items-center justify-between gap-3 px-5 md:px-gutter">
+        <a
+          href="/"
+          className="flex min-w-0 items-center gap-3 py-3 md:gap-4 md:py-4"
+        >
+          <img
+            src="/ecomma.png"
+            alt="ecomma"
+            className="h-6 w-auto shrink-0 md:h-8"
+          />
           <span
-            className="inline-flex items-center gap-2 rounded-full border border-cyan-soft bg-cyan-tint px-3 py-1 text-xs font-semibold text-brand"
-            title="Market: United Arab Emirates (AE)"
-          >
-            <span aria-hidden className="h-2 w-2 rounded-full bg-cyan" />
-            UAE market
+            aria-hidden
+            className="hidden h-7 w-0.5 shrink-0 rounded-full bg-cyan sm:block"
+          />
+          <span className="hidden min-w-0 leading-tight sm:block">
+            <span className="block truncate text-sm font-bold text-navy md:text-base">
+              AI Marketing Dashboard
+            </span>
+            <span className="hidden text-xs text-soft sm:block">
+              Trend intelligence · UAE market
+            </span>
           </span>
-        </div>
-        <div role="tablist" aria-label="Platform" className="inline-flex rounded-md border border-rule bg-page-soft p-1">
+        </a>
+        <nav
+          role="tablist"
+          aria-label="Platform"
+          className="flex shrink-0 items-stretch self-stretch"
+        >
           {PLATFORMS.map((p) => {
-            const active = p.id === platform
+            const active = p.id === platform;
             return (
               <button
                 key={p.id}
                 role="tab"
                 aria-selected={active}
                 onClick={() => onPlatform(p.id)}
-                className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
-                  active ? 'bg-brand text-white shadow-button' : 'text-muted hover:text-brand'
+                className={`relative flex flex-col items-center justify-center px-3 text-center transition-colors md:px-6 ${
+                  active ? "text-brand" : "text-ink hover:text-brand"
                 }`}
               >
-                {p.label}
+                <span className="text-sm font-semibold md:text-[17px]">
+                  {p.label}
+                </span>
+                <span className="hidden text-xs text-brand md:block">
+                  {p.sub}
+                </span>
+                <span
+                  aria-hidden
+                  className={`absolute inset-x-3 bottom-0 h-[3px] rounded-t-full bg-cyan transition-opacity md:inset-x-5 ${
+                    active ? "opacity-100" : "opacity-0"
+                  }`}
+                />
               </button>
-            )
+            );
           })}
-        </div>
+        </nav>
       </div>
     </header>
-  )
+  );
 }
