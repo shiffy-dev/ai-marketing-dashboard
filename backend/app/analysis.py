@@ -9,7 +9,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import httpx
-from anthropic import AsyncAnthropic
+from anthropic import APIConnectionError, APIStatusError, AsyncAnthropic
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -222,6 +222,12 @@ def parse_result(text: str) -> AnalysisResult:
     return AnalysisResult.model_validate(json.loads(text[start : end + 1]))
 
 
+def api_error_message(exc: APIStatusError) -> str:
+    body = exc.body if isinstance(exc.body, dict) else {}
+    error = body.get("error") if isinstance(body.get("error"), dict) else body
+    return str(error.get("message") or exc.message)
+
+
 async def call_llm(client: AsyncAnthropic, evidence: dict, images: list[dict]) -> AnalysisResult:
     labels = ["thumbnail"] + [f"frame {i}" for i in range(1, len(images))]
     intro = f"Images attached in order: {', '.join(labels[: len(images)])}." if images else "No images available."
@@ -232,9 +238,14 @@ async def call_llm(client: AsyncAnthropic, evidence: dict, images: list[dict]) -
     messages: list[dict] = [{"role": "user", "content": content}]
     last_error: Exception | None = None
     for _attempt in range(2):
-        resp = await client.messages.create(
-            model=settings.llm_model, max_tokens=4096, system=SYSTEM_PROMPT, messages=messages
-        )
+        try:
+            resp = await client.messages.create(
+                model=settings.llm_model, max_tokens=4096, system=SYSTEM_PROMPT, messages=messages
+            )
+        except APIStatusError as exc:
+            raise AnalysisError(f"Anthropic API error ({exc.status_code}): {api_error_message(exc)}") from exc
+        except APIConnectionError as exc:
+            raise AnalysisError(f"Could not reach the Anthropic API: {exc}") from exc
         text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
         try:
             return parse_result(text)
@@ -288,10 +299,12 @@ async def get_or_create_analysis(
         video, item = found
 
         evidence = session.scalar(select(Evidence).where(Evidence.platform == platform, Evidence.video_id == video_id))
+        session.commit()  # end the read transaction before the slow network/LLM awaits
         if platform == YOUTUBE:
             try:
                 evidence = await ensure_youtube_evidence(session, video)
             except Exception as exc:  # offline: use whatever evidence is stored
+                session.rollback()
                 log.warning("could not refresh evidence for %s: %s", key, exc)
 
         client = client or anthropic_client()
