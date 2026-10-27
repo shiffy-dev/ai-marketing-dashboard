@@ -69,7 +69,11 @@ async def main() -> None:
     except AnalysisError as exc:
         log.error("Skipping analysis: %s", exc)
         return
-    log.info("LLM provider=%s model=%s — analyses run one at a time", settings.llm_provider, settings.llm_model)
+    log.info(
+        "LLM provider=%s model=%s — analyses run one at a time",
+        settings.llm_provider,
+        settings.llm_model or "cli default",
+    )
 
     await analyze(provider, YOUTUBE, youtube_ids)
     with SessionLocal() as session:

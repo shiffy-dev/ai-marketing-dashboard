@@ -1,12 +1,12 @@
-"""Evidence-based "why is this trending" analysis via a local Ollama model."""
+"""Evidence-based "why is this trending" analysis via the Claude Code CLI (subscription)."""
 
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import httpx
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -122,7 +122,7 @@ class VideoNotFoundError(Exception):
     """The video is unknown to us and could not be fetched from its platform API."""
 
 
-# CPU-only box: run analyses strictly one at a time.
+# One CLI session at a time.
 _semaphore = asyncio.Semaphore(1)
 _locks: dict[str, asyncio.Lock] = {}
 
@@ -168,48 +168,89 @@ MOCK_ANALYSIS = {
 }
 
 
-class OllamaProvider:
-    """Local inference via Ollama's /api/chat with structured (JSON schema) output."""
+INSTALL_HINT = (
+    "Install Claude Code (`npm install -g @anthropic-ai/claude-code`), run `claude` once "
+    "to log in with your Claude subscription, then retry."
+)
+# Env vars that would make the CLI bill an API key instead of the subscription.
+_STRIPPED_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX")
 
-    def __init__(self, base_url: str, model: str):
-        self.base_url = base_url.rstrip("/")
+
+def _cli_env() -> dict[str, str]:
+    return {k: v for k, v in os.environ.items() if k not in _STRIPPED_ENV}
+
+
+class ClaudeCLIProvider:
+    """Headless Claude Code (`claude -p`) using the user's logged-in subscription.
+
+    The prompt is passed on stdin; `--output-format json` wraps the reply as
+    {"result": "...", "is_error": bool}. No API key is ever used."""
+
+    def __init__(self, binary: str = "claude", model: str | None = None, timeout: int | None = None):
+        self.binary = binary
         self.model = model
+        self.timeout = timeout or settings.llm_timeout_seconds
+
+    def _argv(self) -> list[str]:
+        argv = [self.binary, "-p", "--output-format", "json", "--system-prompt", "{system}"]
+        if self.model:
+            argv += ["--model", self.model]
+        return argv
 
     async def chat(self, *, system: str, messages: list[dict], format: dict | None = None) -> str:
-        payload: dict = {
-            "model": self.model,
-            "stream": False,
-            "think": False,  # qwen3 thinking mode off: too slow on CPU
-            "messages": [{"role": "system", "content": system}, *messages],
-        }
-        if format is not None:
-            payload["format"] = format
+        # Fold the conversation into one stdin prompt; -p is single-turn.
+        prompt = "\n\n".join(
+            (f"[previous reply]\n{m['content']}" if m["role"] == "assistant" else m["content"]) for m in messages
+        )
+        argv = [a.replace("{system}", system) for a in self._argv()]
         try:
-            async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as http:
-                resp = await http.post(f"{self.base_url}/api/chat", json=payload)
-        except httpx.HTTPError as exc:
-            raise AnalysisError(
-                f"Cannot reach Ollama at {self.base_url}. Start it with `ollama serve` "
-                f"(and run `ollama pull {self.model}` once), then retry."
-            ) from exc
-        if resp.status_code != 200:
-            raise AnalysisError(f"Ollama error ({resp.status_code}): {resp.text[:300]}")
-        return resp.json().get("message", {}).get("content") or ""
+            proc = await asyncio.create_subprocess_exec(
+                *argv,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=_cli_env(),
+            )
+        except FileNotFoundError as exc:
+            raise AnalysisError(f"`{self.binary}` was not found on PATH. {INSTALL_HINT}") from exc
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(prompt.encode("utf-8")), timeout=self.timeout)
+        except asyncio.TimeoutError as exc:
+            proc.kill()
+            raise AnalysisError(f"Claude CLI timed out after {self.timeout}s") from exc
+
+        stderr = err.decode("utf-8", "replace").strip()
+        if proc.returncode != 0:
+            lowered = stderr.lower()
+            if "log in" in lowered or "login" in lowered or "not authenticated" in lowered or "unauthorized" in lowered:
+                raise AnalysisError(f"Claude CLI is not logged in. Run `{self.binary}` and sign in. ({stderr[:200]})")
+            raise AnalysisError(f"Claude CLI failed (exit {proc.returncode}): {stderr[:300] or out[:300]!s}")
+
+        text = out.decode("utf-8", "replace")
+        try:
+            envelope = json.loads(text)
+        except ValueError:
+            return text  # older CLI builds print the raw reply
+        if isinstance(envelope, dict):
+            if envelope.get("is_error"):
+                raise AnalysisError(f"Claude CLI error: {str(envelope.get('result') or '')[:300]}")
+            return str(envelope.get("result") or "")
+        return text
 
 
 class MockProvider:
-    """Deterministic offline analysis for UI development (LLM_PROVIDER=mock)."""
+    """Deterministic offline analysis for tests and UI development (LLM_PROVIDER=mock)."""
 
     async def chat(self, *, system: str, messages: list[dict], format: dict | None = None) -> str:
         return json.dumps(MOCK_ANALYSIS)
 
 
-def llm_provider() -> OllamaProvider | MockProvider:
+def llm_provider() -> ClaudeCLIProvider | MockProvider:
     if settings.llm_provider == "mock":
         return MockProvider()
-    if settings.llm_provider == "ollama":
-        return OllamaProvider(settings.ollama_base_url, settings.llm_model)
-    raise AnalysisError(f"unknown LLM_PROVIDER {settings.llm_provider!r} (expected 'ollama' or 'mock')")
+    if settings.llm_provider == "claude_cli":
+        return ClaudeCLIProvider(settings.claude_cli_bin, settings.llm_model or None)
+    raise AnalysisError(f"unknown LLM_PROVIDER {settings.llm_provider!r} (expected 'claude_cli' or 'mock')")
 
 
 def load_uae_trends() -> dict | list | None:
@@ -270,13 +311,17 @@ def parse_result(text: str) -> AnalysisResult:
     return AnalysisResult.model_validate(json.loads(text[start : end + 1]))
 
 
-async def call_llm(provider: OllamaProvider | MockProvider, evidence: dict) -> AnalysisResult:
+async def call_llm(provider: ClaudeCLIProvider | MockProvider, evidence: dict) -> AnalysisResult:
     messages: list[dict] = [
-        {"role": "user", "content": f"Evidence (JSON):\n{json.dumps(evidence, ensure_ascii=False, indent=1)}"}
+        {
+            "role": "user",
+            "content": f"Evidence (JSON):\n{json.dumps(evidence, ensure_ascii=False, indent=1)}\n\n"
+            "Respond with ONLY the JSON object. No prose, no markdown fences.",
+        }
     ]
     last_error: Exception | None = None
     for _attempt in range(2):
-        text = await provider.chat(system=SYSTEM_PROMPT, messages=messages, format=AnalysisResult.model_json_schema())
+        text = await provider.chat(system=SYSTEM_PROMPT, messages=messages)
         try:
             return parse_result(text)
         except (ValueError, ValidationError) as exc:
@@ -318,7 +363,7 @@ async def get_or_create_analysis(
     session: Session,
     platform: str,
     video_id: str,
-    llm: OllamaProvider | MockProvider | None = None,
+    llm: ClaudeCLIProvider | MockProvider | None = None,
     youtube: YouTubeClient | None = None,
     force: bool = False,
 ) -> tuple[Analysis, bool]:
@@ -365,7 +410,7 @@ async def get_or_create_analysis(
         row = Analysis(
             platform=platform,
             video_id=video_id,
-            model=settings.llm_model,
+            model=f"{settings.llm_provider}:{settings.llm_model or 'default'}",
             prompt_version=PROMPT_VERSION,
             result_json=result.model_dump(),
             confidence=result.confidence,

@@ -155,8 +155,9 @@ export default function AnalysisDrawer({ item, onClose }) {
                 </button>
               }
             >
-              No stored analysis for this video yet. Analyzing on the local model can take a few
-              minutes on CPU — or run scripts/prewarm.py to analyze the whole top 10 offline.
+              No stored analysis for this video yet. Analyze it now with Claude Code (uses your
+              logged-in subscription, usually under a minute) — or run scripts/prewarm.py to analyze
+              the whole top 10 in one go.
             </Notice>
           )}
 

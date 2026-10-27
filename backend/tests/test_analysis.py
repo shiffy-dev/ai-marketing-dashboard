@@ -27,7 +27,7 @@ VALID = {
 
 
 class FakeLLM:
-    """Provider test double matching the OllamaProvider.chat interface."""
+    """Provider test double matching the ClaudeCLIProvider.chat interface."""
 
     def __init__(self, responses):
         self.responses = list(responses)
@@ -82,7 +82,6 @@ def test_analysis_generated_cached_and_listed(setup):
     assert len(llm.requests) == 1
     assert first["analysis"]["confidence"] == "high"
     assert first["analysis"]["why_trending"]["drivers"][0]["evidence"]
-    assert llm.requests[0]["format"]  # JSON schema passed to Ollama
 
     prompt = llm.requests[0]["messages"][-1]["content"]
     assert "Hello habibi" in prompt and "computed_metrics" in prompt and "uae_calendar_context" in prompt
@@ -154,14 +153,73 @@ def test_calendar_context():
     assert "Ramadan" in {e["event"] for e in calendar_context(date(2026, 3, 1))}
 
 
-def test_ollama_unreachable_surfaces_clear_message(setup):
-    from app.analysis import OllamaProvider
+class FakeProcess:
+    """Stand-in for asyncio.subprocess.Process."""
 
-    _use(OllamaProvider("http://127.0.0.1:9", "qwen3:8b"))  # port 9: always refused
-    resp = setup.client.post("/api/analysis/youtube/vid14")
+    def __init__(self, stdout=b"", stderr=b"", returncode=0):
+        self._out, self._err, self.returncode = stdout, stderr, returncode
+        self.stdin_data = None
+
+    async def communicate(self, data=None):
+        self.stdin_data = data
+        return self._out, self._err
+
+    def kill(self):
+        pass
+
+
+def _fake_exec(process, calls):
+    async def create(*argv, **kwargs):
+        calls.append({"argv": list(argv), "env": kwargs.get("env")})
+        return process
+
+    return create
+
+
+def test_claude_cli_invoked_headless_without_api_key(setup, monkeypatch):
+    from app.analysis import ClaudeCLIProvider
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-be-stripped")
+    envelope = {"type": "result", "is_error": False, "result": json.dumps(VALID)}
+    proc = FakeProcess(stdout=json.dumps(envelope).encode())
+    calls = []
+    _use(ClaudeCLIProvider("claude"))
+    with (
+        patch("app.analysis.asyncio.create_subprocess_exec", _fake_exec(proc, calls)),
+        patch("app.analysis.ensure_youtube_evidence", side_effect=_stored_evidence),
+    ):
+        resp = setup.client.post("/api/analysis/youtube/vid13")
+    assert resp.status_code == 200
+    assert resp.json()["analysis"]["hook"]["technique"] == "Curiosity Gap"
+
+    argv = calls[0]["argv"]
+    assert argv[0] == "claude" and "-p" in argv and "--output-format" in argv and "json" in argv
+    assert "ANTHROPIC_API_KEY" not in calls[0]["env"]
+    assert b"Evidence (JSON)" in proc.stdin_data  # prompt went in via stdin
+
+
+def test_claude_cli_missing_binary_is_clear(setup):
+    from app.analysis import ClaudeCLIProvider
+
+    async def not_found(*argv, **kwargs):
+        raise FileNotFoundError(argv[0])
+
+    _use(ClaudeCLIProvider("claude"))
+    with patch("app.analysis.asyncio.create_subprocess_exec", not_found):
+        resp = setup.client.post("/api/analysis/youtube/vid14")
     assert resp.status_code == 502
-    assert "Cannot reach Ollama" in resp.json()["detail"]
-    assert "ollama serve" in resp.json()["detail"]
+    assert "not found on PATH" in resp.json()["detail"] and "Install Claude Code" in resp.json()["detail"]
+
+
+def test_claude_cli_not_logged_in_is_clear(setup):
+    from app.analysis import ClaudeCLIProvider
+
+    proc = FakeProcess(stderr=b"Not logged in. Please run /login", returncode=1)
+    _use(ClaudeCLIProvider("claude"))
+    with patch("app.analysis.asyncio.create_subprocess_exec", _fake_exec(proc, [])):
+        resp = setup.client.post("/api/analysis/youtube/vid14")
+    assert resp.status_code == 502
+    assert "not logged in" in resp.json()["detail"].lower()
 
 
 def test_mock_provider_returns_valid_analysis(setup):
