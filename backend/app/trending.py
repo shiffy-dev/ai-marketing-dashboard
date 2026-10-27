@@ -39,6 +39,7 @@ async def refresh_youtube(session: Session, client: YouTubeClient | None = None)
     """Fetches the UAE mostPopular chart and stores videos + a snapshot. Raises on API failure."""
     client = client or YouTubeClient()
     attempted_at = utcnow()
+    session.commit()  # end any open read transaction before network awaits
     try:
         items = await client.most_popular(MARKET.country)
         subs = await client.channel_subscribers([i["snippet"]["channelId"] for i in items])
@@ -145,6 +146,7 @@ async def ensure_youtube_evidence(
     evidence = session.scalar(select(Evidence).where(Evidence.platform == YOUTUBE, Evidence.video_id == video.video_id))
     if not force and evidence_is_fresh(evidence):
         return evidence
+    session.commit()  # end the read transaction before network awaits
 
     client = client or YouTubeClient()
     transcript, (comments, comments_status) = await asyncio.gather(

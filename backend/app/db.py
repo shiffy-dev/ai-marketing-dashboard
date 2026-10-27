@@ -2,6 +2,7 @@ from collections.abc import Iterator
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from .config import settings
 
@@ -11,16 +12,18 @@ class Base(DeclarativeBase):
 
 
 def make_engine(url: str):
-    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    engine = create_engine(url, connect_args=connect_args)
-    if url.startswith("sqlite"):
+    if not url.startswith("sqlite"):
+        return create_engine(url)
+    # Async handlers use sync sessions on the event loop; a bounded pool would block the loop
+    # (and deadlock the server) once concurrent requests hold every connection across awaits.
+    engine = create_engine(url, connect_args={"check_same_thread": False, "timeout": 30}, poolclass=NullPool)
 
-        @event.listens_for(engine, "connect")
-        def _sqlite_pragmas(dbapi_conn, _):
-            cur = dbapi_conn.cursor()
-            cur.execute("PRAGMA journal_mode=WAL")
-            cur.execute("PRAGMA foreign_keys=ON")
-            cur.close()
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(dbapi_conn, _):
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.close()
 
     return engine
 
